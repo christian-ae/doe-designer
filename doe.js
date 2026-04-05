@@ -436,6 +436,7 @@ function validateAndGenerate() {
 
   renderTable(runs);
   renderPlots(runs);
+  renderParCoords(runs);
 
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -582,6 +583,84 @@ function renderPlots(runs) {
     }),
     config
   );
+}
+
+// ── Parallel coordinates plot ──────────────────────────────────────────────
+
+function renderParCoords(runs) {
+  const f = state.factors;
+  const chargeUnit = f.chargeLoad.unit;
+  const dischUnit  = f.dischargeLoad.unit;
+
+  // Build combo tick maps for the termination axis
+  const combos       = f.termination.combinations;
+  const comboIndices = runs.map(r => r.termComboIndex);
+  const uniqueIdx    = [...new Set(comboIndices)].sort((a, b) => a - b);
+  const tickvals     = uniqueIdx;
+  const ticktext     = uniqueIdx.map(i => {
+    const c = combos[i - 1];
+    return c ? comboLabel(c) : `Combo ${i}`;
+  });
+
+  // Colour lines by run number for easy visual separation
+  const runNums = runs.map(r => r.run);
+  const nRuns   = runs.length;
+
+  const dimensions = [
+    {
+      label:  'Temperature (°C)',
+      values: runs.map(r => r.temperature),
+    },
+    {
+      label:  `Charge Load (${chargeUnit})`,
+      values: runs.map(r => r.chargeLoad),
+    },
+    {
+      label:  `Discharge Load (${dischUnit})`,
+      values: runs.map(r => r.dischargeLoad),
+    },
+    {
+      label:          'Disch. Term. Value',
+      values:         runs.map(r => r.termCombo.dischargeValue),
+      // Show the discharge unit in a note via the axis label suffix where values differ
+    },
+    {
+      label:          'Chg. Term. Value',
+      values:         runs.map(r => r.termCombo.chargeValue),
+    },
+    {
+      label:    'Term. Combo',
+      values:   comboIndices,
+      tickvals,
+      ticktext,
+    },
+  ];
+
+  const trace = {
+    type:       'parcoords',
+    line: {
+      color:      runNums,
+      colorscale: 'Viridis',
+      showscale:  true,
+      cmin:       1,
+      cmax:       nRuns,
+      colorbar: {
+        title:      { text: 'Run', side: 'right' },
+        thickness:  14,
+        len:        0.8,
+      },
+    },
+    dimensions,
+  };
+
+  const layout = {
+    margin:        { t: 30, r: 80, b: 20, l: 60 },
+    autosize:      true,
+    paper_bgcolor: '#ffffff',
+    font:          { size: 11 },
+  };
+
+  Plotly.react('plot-parcoords', [trace], layout, { responsive: true, displayModeBar: false });
 }
 
 // ── CSV download ───────────────────────────────────────────────────────────

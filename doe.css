@@ -531,6 +531,19 @@ section {
   background: var(--color-accent-light);
 }
 
+/* ── Parallel coordinates plot ──────────────────────────── */
+.parcoords-cell {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-surface);
+  margin-top: 0;
+}
+
+.plot-parcoords {
+  height: 360px;
+}
+
 /* ── Utility ────────────────────────────────────────────── */
 .hidden {
   display: none !important;

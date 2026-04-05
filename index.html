@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Battery Test DoE Designer</title>
+  <link rel="stylesheet" href="doe.css" />
+  <script src="https://cdn.plot.ly/plotly-3.5.0.min.js" defer></script>
+  <script src="doe.js" defer></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Battery Test DoE Designer</h1>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SECTION 1 — Factor Inputs
+    ═══════════════════════════════════════════════════════ -->
+    <section id="factor-inputs">
+      <h2>Factor Inputs</h2>
+      <p class="section-hint">Enter comma-separated values for each factor (e.g. <code>5, 10, 25, 45</code>).</p>
+
+      <!-- Temperature -->
+      <div class="factor-row">
+        <label class="factor-label" for="input-temperature">Temperature</label>
+        <div class="factor-input-wrap">
+          <input
+            type="text"
+            id="input-temperature"
+            class="factor-input"
+            placeholder="e.g. 5, 10, 25, 45"
+            aria-describedby="temperature-hint"
+          />
+          <span class="unit-label">°C</span>
+        </div>
+        <p class="field-hint" id="temperature-hint">Valid range: −20 to 80 °C</p>
+      </div>
+
+      <!-- Charge Load -->
+      <div class="factor-row">
+        <label class="factor-label" for="input-charge">Charge Load</label>
+        <div class="factor-input-wrap">
+          <input
+            type="text"
+            id="input-charge"
+            class="factor-input"
+            placeholder="e.g. 1, 3, 5, 10"
+          />
+          <select id="select-charge-unit" class="unit-select" aria-label="Charge load unit">
+            <option value="A">A</option>
+            <option value="C">C-rate</option>
+            <option value="W">W</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Discharge Load -->
+      <div class="factor-row">
+        <label class="factor-label" for="input-discharge">Discharge Load</label>
+        <div class="factor-input-wrap">
+          <input
+            type="text"
+            id="input-discharge"
+            class="factor-input"
+            placeholder="e.g. 3, 4, 5"
+          />
+          <select id="select-discharge-unit" class="unit-select" aria-label="Discharge load unit">
+            <option value="A">A</option>
+            <option value="C">C-rate</option>
+            <option value="W">W</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Termination Combinations -->
+      <div class="factor-row">
+        <label class="factor-label">Termination Combinations</label>
+        <p class="field-hint">
+          Each row defines a fixed pair of discharge and charge termination conditions.
+          The combination is treated as one level in the DoE — different types and units per side are allowed.
+        </p>
+        <div class="term-combo-wrap">
+          <div class="term-combo-header">
+            <span class="term-combo-idx-col">#</span>
+            <span class="term-combo-side-label">Discharge Termination</span>
+            <span class="term-combo-side-label">Charge Termination</span>
+            <span></span>
+          </div>
+          <div id="term-combo-list"></div>
+        </div>
+        <button type="button" id="btn-add-combo" class="btn-add-combo">+ Add Combination</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SECTION 2 — DoE Method
+    ═══════════════════════════════════════════════════════ -->
+    <section id="method-selector">
+      <h2>DoE Method</h2>
+
+      <!-- Full Factorial -->
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-fullFactorial" value="fullFactorial" checked />
+          Full Factorial
+        </label>
+        <div class="method-extra" id="extra-fullFactorial">
+          <p class="method-extra-hint">Generates all combinations of your factor values. Total runs = product of all list lengths.</p>
+        </div>
+      </div>
+
+      <!-- Latin Hypercube Sampling -->
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-lhs" value="lhs" />
+          Latin Hypercube Sampling
+        </label>
+        <div class="method-extra hidden" id="extra-lhs">
+          <div class="method-param-row">
+            <label for="input-lhs-samples">Number of samples</label>
+            <input
+              type="number"
+              id="input-lhs-samples"
+              class="param-input"
+              value="20"
+              min="2"
+              step="1"
+            />
+          </div>
+          <p class="method-extra-hint">Samples are drawn to cover the factor value space evenly without testing all combinations.</p>
+        </div>
+      </div>
+
+      <!-- Taguchi Orthogonal Array -->
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-taguchi" value="taguchi" />
+          Taguchi Orthogonal Array
+        </label>
+        <div class="method-extra hidden" id="extra-taguchi">
+          <div class="method-param-row">
+            <label for="select-taguchi-levels">Levels per factor</label>
+            <select id="select-taguchi-levels" class="param-select">
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+          <p class="taguchi-array-badge">Auto-selected array: <strong id="taguchi-array-name">L8</strong></p>
+          <p class="method-extra-hint">Uses the first N values from each factor's list. Each factor list must contain at least N values.</p>
+        </div>
+      </div>
+
+      <!-- Validation errors -->
+      <div id="validation-errors" class="validation-errors" aria-live="polite"></div>
+
+      <button id="btn-generate" class="btn-primary">Generate DoE</button>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SECTION 3 — Results (hidden until generated)
+    ═══════════════════════════════════════════════════════ -->
+    <section id="results" class="hidden">
+      <h2>Results</h2>
+      <p id="results-summary" class="results-summary"></p>
+
+      <div class="table-actions">
+        <button id="btn-download-csv" class="btn-secondary">Download CSV</button>
+      </div>
+
+      <div class="doe-table-wrapper">
+        <table id="doe-table">
+          <thead id="doe-thead"></thead>
+          <tbody id="doe-tbody"></tbody>
+        </table>
+      </div>
+
+      <h3>Plots</h3>
+      <div class="plot-grid">
+        <div class="plot-cell">
+          <div class="plot-title">Temperature vs Charge Load</div>
+          <div id="plot-temp-charge" class="plot-div"></div>
+        </div>
+        <div class="plot-cell">
+          <div class="plot-title">Temperature vs Discharge Load</div>
+          <div id="plot-temp-discharge" class="plot-div"></div>
+        </div>
+        <div class="plot-cell">
+          <div class="plot-title">Discharge vs Charge Load</div>
+          <div id="plot-discharge-charge" class="plot-div"></div>
+        </div>
+        <div class="plot-cell">
+          <div class="plot-title">Temperature vs Termination</div>
+          <div id="plot-temp-term" class="plot-div"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,578 @@
+/* ── CSS Custom Properties ─────────────────────────────── */
+:root {
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-dark: #cbd5e1;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-light: #eff6ff;
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-success-bg: #f0fdf4;
+  --color-thead-bg: #f1f5f9;
+  --radius: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── Reset ──────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.85em;
+  background: var(--color-border);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+/* ── Layout ─────────────────────────────────────────────── */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0 0 2rem;
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: 0.75rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--color-text);
+}
+
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem;
+}
+
+section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.section-hint {
+  margin: -0.5rem 0 1.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+/* ── Factor rows ────────────────────────────────────────── */
+.factor-row {
+  margin-bottom: 1.25rem;
+}
+
+.factor-row:last-child {
+  margin-bottom: 0;
+}
+
+.factor-label {
+  display: block;
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+  color: var(--color-text);
+}
+
+.factor-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.factor-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  color: var(--color-text);
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+}
+
+.factor-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+
+.factor-input.invalid {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.unit-label {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  min-width: 2rem;
+  font-weight: 500;
+}
+
+.unit-select,
+.termination-type-select {
+  flex-shrink: 0;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.termination-type-select {
+  min-width: 150px;
+}
+
+.field-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Method selector ────────────────────────────────────── */
+.method-option {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.method-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  background: var(--color-surface);
+  transition: background 0.1s;
+}
+
+.method-label:hover {
+  background: var(--color-accent-light);
+}
+
+.method-label input[type="radio"] {
+  accent-color: var(--color-accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.method-extra {
+  padding: 0.85rem 1rem 0.85rem 2.6rem;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}
+
+.method-param-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.method-param-row label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  min-width: 140px;
+}
+
+.param-input {
+  width: 90px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.param-select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  background: var(--color-surface);
+}
+
+.taguchi-array-badge {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.taguchi-array-badge strong {
+  color: var(--color-accent);
+}
+
+.method-extra-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Validation errors ──────────────────────────────────── */
+.validation-errors {
+  margin: 1rem 0;
+}
+
+.validation-errors:empty {
+  display: none;
+}
+
+.error-list {
+  margin: 0;
+  padding: 0.75rem 0.75rem 0.75rem 1.75rem;
+  background: var(--color-error-bg);
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius);
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+.error-list li {
+  margin-bottom: 0.2rem;
+}
+
+.error-list li:last-child {
+  margin-bottom: 0;
+}
+
+.warning-list {
+  margin: 0;
+  padding: 0.75rem 0.75rem 0.75rem 1.75rem;
+  background: var(--color-warning-bg);
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius);
+  color: var(--color-warning);
+  font-size: 0.875rem;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-block;
+  padding: 0.6rem 1.5rem;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+.btn-secondary {
+  display: inline-block;
+  padding: 0.5rem 1.1rem;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--color-accent-light);
+}
+
+/* ── Results section ────────────────────────────────────── */
+.results-summary {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin: -0.5rem 0 1rem;
+}
+
+.table-actions {
+  margin-bottom: 0.75rem;
+}
+
+/* ── DoE Table ──────────────────────────────────────────── */
+.doe-table-wrapper {
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 0.5rem;
+}
+
+#doe-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+#doe-table th,
+#doe-table td {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+  text-align: right;
+}
+
+#doe-table th:first-child,
+#doe-table td:first-child {
+  text-align: center;
+}
+
+#doe-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-thead-bg);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  z-index: 1;
+}
+
+#doe-table tbody tr:nth-child(even) {
+  background: var(--color-bg);
+}
+
+#doe-table tbody tr:hover {
+  background: var(--color-accent-light);
+}
+
+/* ── Plot grid ──────────────────────────────────────────── */
+.plot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.plot-cell {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.plot-title {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-thead-bg);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.plot-div {
+  height: 300px;
+}
+
+/* ── Termination combination builder ────────────────────── */
+.term-combo-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.term-combo-header {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr 1fr 2rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  background: var(--color-thead-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.term-combo-side-label {
+  text-align: center;
+}
+
+.term-combo-idx-col {
+  text-align: center;
+}
+
+.term-combo-row {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr 1fr 2rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.term-combo-row:last-child {
+  border-bottom: none;
+}
+
+.term-combo-row:nth-child(even) {
+  background: var(--color-bg);
+}
+
+.combo-index {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  font-weight: 600;
+}
+
+.term-combo-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.term-combo-cell .unit-select {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.4rem;
+}
+
+.term-combo-cell .factor-input {
+  width: 70px;
+  flex: 0 0 70px;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.4rem;
+}
+
+.term-combo-cell .unit-label {
+  font-size: 0.8rem;
+  min-width: 1.75rem;
+}
+
+.btn-remove-combo {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.btn-remove-combo:hover {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.btn-add-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  border: 1px dashed var(--color-accent);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btn-add-combo:hover {
+  background: var(--color-accent-light);
+}
+
+/* ── Utility ────────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .container {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+  }
+
+  .factor-input-wrap {
+    flex-wrap: wrap;
+  }
+
+  .factor-input {
+    width: 100%;
+  }
+
+  .termination-type-select {
+    min-width: 120px;
+    width: 100%;
+  }
+
+  .plot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plot-div {
+    height: 260px;
+  }
+
+  .method-param-row {
+    flex-wrap: wrap;
+  }
+
+  .method-param-row label {
+    min-width: unset;
+    width: 100%;
+  }
+}

@@ -729,7 +729,7 @@ function renderParCoords(runs) {
   };
 
   const layout = {
-    margin:        { t: 30, r: 80, b: 20, l: 60 },
+    margin:        { t: 40, r: 80, b: 80, l: 60 },
     autosize:      true,
     paper_bgcolor: '#ffffff',
     font:          { size: 11 },

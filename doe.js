@@ -13,8 +13,12 @@ const TERMINATION_UNITS = {
 
 const TERMINATION_TYPES = Object.keys(TERMINATION_UNITS);
 
-// Standard Taguchi L8 (8 runs × 7 columns, values 1–2; use columns 0–3 for 4 factors)
-const L8 = [
+// Taguchi orthogonal arrays keyed by number of levels.
+// Each entry: { name, array }  — array uses 1-indexed coded levels.
+// All arrays support ≥ 4 factors; columns 0–3 are used.
+
+// L8: 2 levels, 8 runs, up to 7 factors (use cols 0–3)
+const _L8 = [
   [1, 1, 1, 1, 1, 1, 1],
   [1, 1, 1, 2, 2, 2, 2],
   [1, 2, 2, 1, 1, 2, 2],
@@ -25,8 +29,8 @@ const L8 = [
   [2, 2, 1, 2, 1, 1, 2],
 ];
 
-// Standard Taguchi L9 (9 runs × 4 columns, values 1–3)
-const L9 = [
+// L9: 3 levels, 9 runs, up to 4 factors
+const _L9 = [
   [1, 1, 1, 1],
   [1, 2, 2, 2],
   [1, 3, 3, 3],
@@ -37,6 +41,69 @@ const L9 = [
   [3, 2, 1, 3],
   [3, 3, 2, 1],
 ];
+
+// L16: 4 levels, 16 runs, up to 5 factors (use cols 0–3)
+const _L16 = [
+  [1, 1, 1, 1, 1],
+  [1, 2, 2, 2, 2],
+  [1, 3, 3, 3, 3],
+  [1, 4, 4, 4, 4],
+  [2, 1, 2, 3, 4],
+  [2, 2, 1, 4, 3],
+  [2, 3, 4, 1, 2],
+  [2, 4, 3, 2, 1],
+  [3, 1, 3, 4, 2],
+  [3, 2, 4, 3, 1],
+  [3, 3, 1, 2, 4],
+  [3, 4, 2, 1, 3],
+  [4, 1, 4, 2, 3],
+  [4, 2, 3, 1, 4],
+  [4, 3, 2, 4, 1],
+  [4, 4, 1, 3, 2],
+];
+
+// L25: 5 levels, 25 runs, up to 6 factors (use cols 0–3)
+const _L25 = [
+  [1, 1, 1, 1, 1, 1],
+  [1, 2, 2, 2, 2, 2],
+  [1, 3, 3, 3, 3, 3],
+  [1, 4, 4, 4, 4, 4],
+  [1, 5, 5, 5, 5, 5],
+  [2, 1, 2, 3, 4, 5],
+  [2, 2, 3, 4, 5, 1],
+  [2, 3, 4, 5, 1, 2],
+  [2, 4, 5, 1, 2, 3],
+  [2, 5, 1, 2, 3, 4],
+  [3, 1, 3, 5, 2, 4],
+  [3, 2, 4, 1, 3, 5],
+  [3, 3, 5, 2, 4, 1],
+  [3, 4, 1, 3, 5, 2],
+  [3, 5, 2, 4, 1, 3],
+  [4, 1, 4, 2, 5, 3],
+  [4, 2, 5, 3, 1, 4],
+  [4, 3, 1, 4, 2, 5],
+  [4, 4, 2, 5, 3, 1],
+  [4, 5, 3, 1, 4, 2],
+  [5, 1, 5, 4, 3, 2],
+  [5, 2, 1, 5, 4, 3],
+  [5, 3, 2, 1, 5, 4],
+  [5, 4, 3, 2, 1, 5],
+  [5, 5, 4, 3, 2, 1],
+];
+
+// Lookup: levels → { name, array }
+const TAGUCHI_ARRAYS = {
+  2: { name: 'L8',  array: _L8  },
+  3: { name: 'L9',  array: _L9  },
+  4: { name: 'L16', array: _L16 },
+  5: { name: 'L25', array: _L25 },
+};
+
+const TAGUCHI_MAX_LEVELS = Math.max(...Object.keys(TAGUCHI_ARRAYS).map(Number));
+
+function taguchiArrayName(levels) {
+  return TAGUCHI_ARRAYS[levels] ? TAGUCHI_ARRAYS[levels].name : null;
+}
 
 // ── Application state ──────────────────────────────────────────────────────
 const state = {
@@ -266,7 +333,7 @@ function generateLHS(factors, n) {
 }
 
 function generateTaguchi(factors, levels) {
-  const array = levels === 2 ? L8 : L9;
+  const { array } = TAGUCHI_ARRAYS[levels];
   const lists = [
     factors.temperature.values,
     factors.chargeLoad.values,
@@ -340,20 +407,28 @@ function validateInputs() {
 
   if (state.method === 'taguchi') {
     const L = state.methodParams.taguchiLevels;
-    const factorNames = ['Temperature', 'Charge Load', 'Discharge Load', 'Termination Combinations'];
-    const factorLengths = [
-      f.temperature.values.length,
-      f.chargeLoad.values.length,
-      f.dischargeLoad.values.length,
-      f.termination.combinations.length,
-    ];
-    factorLengths.forEach((len, i) => {
-      if (len < L) {
-        errors.push(
-          `${factorNames[i]}: needs at least ${L} entries for Taguchi ${L}-level design (has ${len}).`
-        );
-      }
-    });
+    if (!Number.isInteger(L) || L < 2) {
+      errors.push('Taguchi: levels per factor must be an integer ≥ 2.');
+    } else if (!TAGUCHI_ARRAYS[L]) {
+      errors.push(
+        `Taguchi: no standard orthogonal array available for ${L} levels. Supported: 2–${TAGUCHI_MAX_LEVELS}.`
+      );
+    } else {
+      const factorNames = ['Temperature', 'Charge Load', 'Discharge Load', 'Termination Combinations'];
+      const factorLengths = [
+        f.temperature.values.length,
+        f.chargeLoad.values.length,
+        f.dischargeLoad.values.length,
+        f.termination.combinations.length,
+      ];
+      factorLengths.forEach((len, i) => {
+        if (len < L) {
+          errors.push(
+            `${factorNames[i]}: needs at least ${L} entries for Taguchi ${L}-level design (has ${len}).`
+          );
+        }
+      });
+    }
   }
 
   if (state.method === 'fullFactorial') {
@@ -429,7 +504,7 @@ function validateAndGenerate() {
   const methodLabels = {
     fullFactorial: 'Full Factorial',
     lhs:           'Latin Hypercube Sampling',
-    taguchi:       `Taguchi ${state.methodParams.taguchiLevels}-level (${state.methodParams.taguchiLevels === 2 ? 'L8' : 'L9'})`,
+    taguchi:       `Taguchi ${state.methodParams.taguchiLevels}-level (${taguchiArrayName(state.methodParams.taguchiLevels)})`,
   };
   document.getElementById('results-summary').textContent =
     `${runs.length} run${runs.length !== 1 ? 's' : ''} · ${methodLabels[state.method]}`;
@@ -755,10 +830,18 @@ function init() {
   });
 
   // Taguchi levels
-  document.getElementById('select-taguchi-levels').addEventListener('change', e => {
+  document.getElementById('input-taguchi-levels').addEventListener('input', e => {
     const L = parseInt(e.target.value, 10);
     state.methodParams.taguchiLevels = L;
-    document.getElementById('taguchi-array-name').textContent = L === 2 ? 'L8' : 'L9';
+    const name = taguchiArrayName(L);
+    const badge = document.getElementById('taguchi-array-name');
+    badge.textContent = name || '—';
+    badge.style.color = name ? '' : 'var(--color-warning)';
+    const hint = document.getElementById('taguchi-array-hint');
+    hint.textContent = name
+      ? `${name}: ${TAGUCHI_ARRAYS[L].array.length} runs`
+      : `No standard array available for ${L} levels (supported: 2–${TAGUCHI_MAX_LEVELS})`;
+    hint.style.color = name ? '' : 'var(--color-warning)';
   });
 
   // Charge unit

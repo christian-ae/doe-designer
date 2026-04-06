@@ -138,14 +138,25 @@
         </label>
         <div class="method-extra hidden" id="extra-taguchi">
           <div class="method-param-row">
-            <label for="select-taguchi-levels">Levels per factor</label>
-            <select id="select-taguchi-levels" class="param-select">
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
+            <label for="input-taguchi-levels">Levels per factor</label>
+            <input
+              type="number"
+              id="input-taguchi-levels"
+              class="param-input"
+              value="2"
+              min="2"
+              max="5"
+              step="1"
+            />
           </div>
-          <p class="taguchi-array-badge">Auto-selected array: <strong id="taguchi-array-name">L8</strong></p>
-          <p class="method-extra-hint">Uses the first N values from each factor's list. Each factor list must contain at least N values.</p>
+          <p class="taguchi-array-badge">
+            Auto-selected array: <strong id="taguchi-array-name">L8</strong>
+            &nbsp;·&nbsp; <span id="taguchi-array-hint" style="font-weight:normal">L8: 8 runs</span>
+          </p>
+          <p class="method-extra-hint">
+            Supported levels: 2 → L8 (8 runs), 3 → L9 (9 runs), 4 → L16 (16 runs), 5 → L25 (25 runs).
+            Uses the first N values from each factor's list.
+          </p>
         </div>
       </div>
 

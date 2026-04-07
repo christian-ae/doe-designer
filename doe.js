@@ -638,7 +638,7 @@ function renderSinglePlot(plotId, xSelId, ySelId, runs) {
     type:          'scatter',
     text:          hoverTexts,
     hovertemplate: '%{text}<extra></extra>',
-    marker:        { size: 8, color: '#2563eb', opacity: 0.75, line: { width: 1, color: '#1d4ed8' } },
+    marker:        { size: 8, color: '#33b257', opacity: 0.75, line: { width: 1, color: '#1e6632' } },
   };
 
   const layout = {
@@ -738,7 +738,7 @@ function renderParCoords(runs) {
     type:       'parcoords',
     line: {
       color:      runNums,
-      colorscale: 'Viridis',
+      colorscale: [[0, '#58b8fe'], [0.5, '#33b257'], [1, '#1e6632']],
       showscale:  true,
       cmin:       1,
       cmax:       nRuns,

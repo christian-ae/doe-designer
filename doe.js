@@ -575,89 +575,112 @@ function renderTable(runs) {
 
 // ── Plot rendering ─────────────────────────────────────────────────────────
 
-function renderPlots(runs) {
-  const f = state.factors;
-  const chargeUnit = f.chargeLoad.unit;
-  const dischUnit  = f.dischargeLoad.unit;
+/** Returns the list of plottable variables with current unit labels. */
+function getVarOptions() {
+  const chargeUnit = state.factors.chargeLoad.unit;
+  const dischUnit  = state.factors.dischargeLoad.unit;
+  return [
+    { key: 'temperature',    label: 'Temperature (°C)' },
+    { key: 'chargeLoad',     label: `Charge Load (${chargeUnit})` },
+    { key: 'dischargeLoad',  label: `Discharge Load (${dischUnit})` },
+    { key: 'termComboIndex', label: 'Termination Combo' },
+  ];
+}
 
-  const temps      = runs.map(r => r.temperature);
-  const charge     = runs.map(r => r.chargeLoad);
-  const disch      = runs.map(r => r.dischargeLoad);
-  const termIdx = runs.map(r => r.termComboIndex);
-  const runNums = runs.map(r => `Run ${r.run}`);
+const PLOT_CONFIGS = [
+  { plotId: 'plot-temp-charge',      xId: 'plot1-x', yId: 'plot1-y', defaultX: 'temperature',   defaultY: 'chargeLoad'     },
+  { plotId: 'plot-temp-discharge',   xId: 'plot2-x', yId: 'plot2-y', defaultX: 'temperature',   defaultY: 'dischargeLoad'  },
+  { plotId: 'plot-discharge-charge', xId: 'plot3-x', yId: 'plot3-y', defaultX: 'dischargeLoad', defaultY: 'chargeLoad'     },
+  { plotId: 'plot-temp-term',        xId: 'plot4-x', yId: 'plot4-y', defaultX: 'temperature',   defaultY: 'termComboIndex' },
+];
 
-  const makeTrace = (x, y, xLabel, yLabel, customText) => ({
-    x,
-    y,
-    mode:  'markers',
-    type:  'scatter',
-    text:  customText || runNums,
-    hovertemplate: `${xLabel}: <b>%{x}</b><br>${yLabel}: <b>%{y}</b><br><i>%{text}</i><extra></extra>`,
-    marker: {
-      size:    8,
-      color:   '#2563eb',
-      opacity: 0.75,
-      line:    { width: 1, color: '#1d4ed8' },
-    },
-  });
+function renderSinglePlot(plotId, xSelId, ySelId, runs) {
+  const xKey    = document.getElementById(xSelId).value;
+  const yKey    = document.getElementById(ySelId).value;
+  const f       = state.factors;
+  const vars    = getVarOptions();
+  const xVar    = vars.find(v => v.key === xKey);
+  const yVar    = vars.find(v => v.key === yKey);
 
-  const layout = (xTitle, yTitle, extra) => Object.assign({
-    xaxis:  { title: { text: xTitle, font: { size: 12 } }, automargin: true },
-    yaxis:  { title: { text: yTitle, font: { size: 12 } }, automargin: true },
-    margin: { t: 16, r: 16, b: 50, l: 60 },
-    autosize: true,
+  const getVal  = (r, key) => key === 'termComboIndex' ? r.termComboIndex : r[key];
+  const xVals   = runs.map(r => getVal(r, xKey));
+  const yVals   = runs.map(r => getVal(r, yKey));
+
+  // Build per-point hover text with combo labels resolved
+  const getDisplayVal = (r, key, numVal) => {
+    if (key !== 'termComboIndex') return numVal;
+    const combo = f.termination.combinations[r.termComboIndex - 1];
+    return combo ? comboLabel(combo) : `Combo ${r.termComboIndex}`;
+  };
+  const hoverTexts = runs.map((r, i) =>
+    `${xVar.label}: <b>${getDisplayVal(r, xKey, xVals[i])}</b><br>` +
+    `${yVar.label}: <b>${getDisplayVal(r, yKey, yVals[i])}</b><br>` +
+    `<i>Run ${r.run}</i>`
+  );
+
+  // Build axis layout, adding tick labels for termination combo axis
+  const makeAxisLayout = (key, label) => {
+    const base = { title: { text: label, font: { size: 12 } }, automargin: true };
+    if (key !== 'termComboIndex') return base;
+    const vals       = runs.map(r => r.termComboIndex);
+    const uniqueIdx  = [...new Set(vals)].sort((a, b) => a - b);
+    const ticktext   = uniqueIdx.map(idx => {
+      const combo = f.termination.combinations[idx - 1];
+      return combo ? comboLabel(combo) : `Combo ${idx}`;
+    });
+    return { ...base, tickmode: 'array', tickvals: uniqueIdx, ticktext };
+  };
+
+  const trace = {
+    x:             xVals,
+    y:             yVals,
+    mode:          'markers',
+    type:          'scatter',
+    text:          hoverTexts,
+    hovertemplate: '%{text}<extra></extra>',
+    marker:        { size: 8, color: '#2563eb', opacity: 0.75, line: { width: 1, color: '#1d4ed8' } },
+  };
+
+  const layout = {
+    xaxis:         makeAxisLayout(xKey, xVar.label),
+    yaxis:         makeAxisLayout(yKey, yVar.label),
+    margin:        { t: 16, r: 16, b: 50, l: 60 },
+    autosize:      true,
     paper_bgcolor: '#ffffff',
     plot_bgcolor:  '#f8fafc',
-  }, extra || {});
+  };
 
-  const config = { responsive: true, displayModeBar: false };
+  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: false });
+}
 
-  // Plot 1: Temp vs Charge Load
-  Plotly.react('plot-temp-charge',
-    [makeTrace(temps, charge, 'Temperature (°C)', `Charge Load (${chargeUnit})`)],
-    layout('Temperature (°C)', `Charge Load (${chargeUnit})`), config);
+function renderPlots(runs) {
+  const varOptions = getVarOptions();
 
-  // Plot 2: Temp vs Discharge Load
-  Plotly.react('plot-temp-discharge',
-    [makeTrace(temps, disch, 'Temperature (°C)', `Discharge Load (${dischUnit})`)],
-    layout('Temperature (°C)', `Discharge Load (${dischUnit})`), config);
+  PLOT_CONFIGS.forEach(({ plotId, xId, yId, defaultX, defaultY }) => {
+    const xSel = document.getElementById(xId);
+    const ySel = document.getElementById(yId);
 
-  // Plot 3: Discharge vs Charge Load
-  Plotly.react('plot-discharge-charge',
-    [makeTrace(disch, charge, `Discharge Load (${dischUnit})`, `Charge Load (${chargeUnit})`)],
-    layout(`Discharge Load (${dischUnit})`, `Charge Load (${chargeUnit})`), config);
+    // Preserve current selection before repopulating (empty string on first call)
+    const prevX = xSel.value;
+    const prevY = ySel.value;
 
-  // Plot 4: Temp vs Termination — y-axis is combo index; hover shows combo label
-  // Build unique combo tick labels for y-axis
-  const uniqueIndices  = [...new Set(termIdx)].sort((a, b) => a - b);
-  const uniqueLabels   = uniqueIndices.map(idx => {
-    const combo = f.termination.combinations[idx - 1];
-    return combo ? comboLabel(combo) : `Combo ${idx}`;
+    xSel.innerHTML = '';
+    ySel.innerHTML = '';
+    varOptions.forEach(v => {
+      const ox = document.createElement('option');
+      ox.value = v.key; ox.textContent = v.label;
+      xSel.appendChild(ox);
+      const oy = document.createElement('option');
+      oy.value = v.key; oy.textContent = v.label;
+      ySel.appendChild(oy);
+    });
+
+    // Use previous selection if still valid, otherwise fall back to default
+    xSel.value = varOptions.some(v => v.key === prevX) ? prevX : defaultX;
+    ySel.value = varOptions.some(v => v.key === prevY) ? prevY : defaultY;
+
+    renderSinglePlot(plotId, xId, yId, runs);
   });
-
-  const termHover = runs.map(r => `Run ${r.run}<br>${comboLabel(r.termCombo)}`);
-
-  Plotly.react('plot-temp-term',
-    [{
-      x:    temps,
-      y:    termIdx,
-      mode: 'markers',
-      type: 'scatter',
-      text: termHover,
-      hovertemplate: 'Temp: <b>%{x} °C</b><br>%{text}<extra></extra>',
-      marker: { size: 8, color: '#2563eb', opacity: 0.75, line: { width: 1, color: '#1d4ed8' } },
-    }],
-    layout('Temperature (°C)', 'Termination Combo', {
-      yaxis: {
-        title:     { text: 'Termination Combo', font: { size: 12 } },
-        tickmode:  'array',
-        tickvals:  uniqueIndices,
-        ticktext:  uniqueLabels,
-        automargin: true,
-      },
-    }),
-    config
-  );
 }
 
 // ── Parallel coordinates plot ──────────────────────────────────────────────
@@ -870,6 +893,13 @@ function init() {
       const result = parseValueList(raw);
       document.getElementById(id).classList.toggle('invalid', result.invalid && raw.trim() !== '');
     });
+  });
+
+  // Plot axis selectors — re-render on change
+  PLOT_CONFIGS.forEach(({ plotId, xId, yId }) => {
+    const handler = () => { if (state.results) renderSinglePlot(plotId, xId, yId, state.results); };
+    document.getElementById(xId).addEventListener('change', handler);
+    document.getElementById(yId).addEventListener('change', handler);
   });
 
   // Add one default combo row to start

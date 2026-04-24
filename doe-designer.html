@@ -6,7 +6,1361 @@
 <title>Degradation DoE Designer</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <script src="https://cdn.plot.ly/plotly-3.5.0.min.js" defer></script>
-<script src="doe.js" defer></script>
+<script>
+'use strict';
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const TEMP_MIN_ABSOLUTE = -20;
+const TEMP_MAX_ABSOLUTE = 80;
+
+const TERMINATION_UNITS = {
+  'Voltage':          'V',
+  'Time':             's',
+  'Energy Capacity':  'Wh',
+  'Charge Capacity':  'Ah',
+  'SOCmin':           '%',
+  'SOCmax':           '%',
+};
+
+// SOCmin is only meaningful on the discharge side; SOCmax only on the charge side.
+const DISCHARGE_TERM_TYPES = ['Voltage', 'Time', 'Energy Capacity', 'Charge Capacity', 'SOCmin'];
+const CHARGE_TERM_TYPES    = ['Voltage', 'Time', 'Energy Capacity', 'Charge Capacity', 'SOCmax'];
+
+// ── Application state ──────────────────────────────────────────────────────
+const state = {
+  factors: {
+    temperature:   { values: [] },
+    chargeLoad:    { values: [], unit: 'A' },
+    dischargeLoad: { values: [], unit: 'A' },
+    // Each combo: { dischargeType, dischargeValue, chargeType, chargeValue }
+    termination:   { combinations: [] },
+  },
+  method: 'fullFactorial',
+  methodParams: {
+    samples:                20,
+    orthogonalSubdivisions: 2,
+  },
+  repeats:        1,
+  inputMode:      'values', // 'values' | 'counts'
+  plotTab:        '3d',     // '3d' | '2d'
+  highlightedRun: null,     // run number highlighted in parcoords, or null
+  results:        null,
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Parse a comma-separated string into a sorted, deduplicated array of numbers.
+ * Returns { values: number[], hadDuplicates: boolean, invalid: boolean }.
+ */
+function parseValueList(str) {
+  if (!str || !str.trim()) {
+    return { values: [], hadDuplicates: false, invalid: true };
+  }
+  const parts = str.split(',').map(s => s.trim()).filter(s => s !== '');
+  const nums = parts.map(s => parseFloat(s));
+  if (nums.some(n => isNaN(n))) {
+    return { values: [], hadDuplicates: false, invalid: true };
+  }
+  const unique = [...new Set(nums)].sort((a, b) => a - b);
+  return {
+    values:        unique,
+    hadDuplicates: unique.length < nums.length,
+    invalid:       false,
+  };
+}
+
+/** Fisher-Yates shuffle (in-place, returns array). */
+function fisherYates(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/** Format a number to at most 4 significant figures, stripping trailing zeros. */
+function fmt(n) {
+  return parseFloat(n.toPrecision(4)).toString();
+}
+
+/** Short human-readable label for a termination combo. */
+function comboLabel(combo) {
+  const du = TERMINATION_UNITS[combo.dischargeType];
+  const cu = TERMINATION_UNITS[combo.chargeType];
+  return `D: ${fmt(combo.dischargeValue)} ${du} / C: ${fmt(combo.chargeValue)} ${cu}`;
+}
+
+// ── Termination combination builder ───────────────────────────────────────
+
+/**
+ * Create and append one combo row to #term-combo-list.
+ * combo: { dischargeType, dischargeValue, chargeType, chargeValue } (defaults to Voltage / '' / Voltage / '')
+ */
+function addComboRow(combo) {
+  combo = combo || {
+    dischargeType: 'Voltage', dischargeValue: '',
+    chargeType:    'Voltage', chargeValue:    '',
+  };
+
+  const list = document.getElementById('term-combo-list');
+  const row  = document.createElement('div');
+  row.className = 'term-combo-row';
+
+  // Index label (will be updated by renumberCombos)
+  const idx = document.createElement('span');
+  idx.className = 'combo-index';
+  idx.textContent = list.children.length + 1;
+
+  const makeCell = (sideLabelText, typeVal, numVal, typesList) => {
+    const cell = document.createElement('div');
+    cell.className = 'term-combo-cell';
+
+    // Side label row (above the type selector)
+    const sideLabel = document.createElement('span');
+    sideLabel.className = 'combo-side-label';
+    sideLabel.textContent = sideLabelText;
+    cell.appendChild(sideLabel);
+
+    // Inputs row: [type select] [value] [unit]
+    const inputsRow = document.createElement('div');
+    inputsRow.className = 'term-combo-cell-inputs';
+
+    const sel = document.createElement('select');
+    sel.className = 'unit-select combo-type-sel';
+    typesList.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      if (t === typeVal) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = 'any';
+    inp.className = 'factor-input combo-val-inp';
+    inp.placeholder = 'value';
+    if (numVal !== '' && numVal !== null && numVal !== undefined) inp.value = numVal;
+
+    const unit = document.createElement('span');
+    unit.className = 'unit-label combo-unit-lbl';
+    unit.textContent = TERMINATION_UNITS[typeVal];
+
+    sel.addEventListener('change', () => {
+      unit.textContent = TERMINATION_UNITS[sel.value];
+    });
+
+    inputsRow.appendChild(sel);
+    inputsRow.appendChild(inp);
+    inputsRow.appendChild(unit);
+    cell.appendChild(inputsRow);
+    return cell;
+  };
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn-remove-combo';
+  removeBtn.title = 'Remove combination';
+  removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    renumberCombos();
+  });
+
+  row.appendChild(idx);
+  row.appendChild(makeCell('Discharge', combo.dischargeType, combo.dischargeValue, DISCHARGE_TERM_TYPES));
+  row.appendChild(makeCell('Charge',    combo.chargeType,    combo.chargeValue,    CHARGE_TERM_TYPES));
+  row.appendChild(removeBtn);
+
+  list.appendChild(row);
+}
+
+function renumberCombos() {
+  document.querySelectorAll('.term-combo-row .combo-index').forEach((el, i) => {
+    el.textContent = i + 1;
+  });
+}
+
+/** Read all combo rows from the DOM into state.factors.termination.combinations. */
+function syncCombosFromDOM() {
+  const rows = document.querySelectorAll('.term-combo-row');
+  state.factors.termination.combinations = Array.from(rows).map(row => {
+    const cells = row.querySelectorAll('.term-combo-cell');
+    const dSel  = cells[0].querySelector('.combo-type-sel');
+    const dInp  = cells[0].querySelector('.combo-val-inp');
+    const cSel  = cells[1].querySelector('.combo-type-sel');
+    const cInp  = cells[1].querySelector('.combo-val-inp');
+    return {
+      dischargeType:  dSel.value,
+      dischargeValue: parseFloat(dInp.value),
+      chargeType:     cSel.value,
+      chargeValue:    parseFloat(cInp.value),
+    };
+  });
+}
+
+// ── DoE Generation ─────────────────────────────────────────────────────────
+
+function generateFullFactorial(factors) {
+  const lists = [
+    factors.temperature.values,
+    factors.chargeLoad.values,
+    factors.dischargeLoad.values,
+    factors.termination.combinations,
+  ];
+
+  let runs = [[]];
+  for (const list of lists) {
+    const expanded = [];
+    for (const partial of runs) {
+      for (const v of list) {
+        expanded.push([...partial, v]);
+      }
+    }
+    runs = expanded;
+  }
+
+  return runs.map((r, i) => ({
+    run:            i + 1,
+    temperature:    r[0],
+    chargeLoad:     r[1],
+    dischargeLoad:  r[2],
+    termCombo:      r[3],
+    termComboIndex: factors.termination.combinations.indexOf(r[3]) + 1,
+  }));
+}
+
+function generateLHS(factors, n) {
+  const numericLists = [
+    factors.temperature.values,
+    factors.chargeLoad.values,
+    factors.dischargeLoad.values,
+  ];
+  const combos = factors.termination.combinations;
+
+  const perms = [...numericLists, combos].map(
+    () => fisherYates(Array.from({ length: n }, (_, i) => i))
+  );
+
+  const samples = [];
+  for (let i = 0; i < n; i++) {
+    const strataFn = (list, k) => {
+      const stratum = perms[k][i];
+      const u = (stratum + Math.random()) / n;
+      return Math.min(Math.floor(u * list.length), list.length - 1);
+    };
+
+    const tIdx = strataFn(numericLists[0], 0);
+    const cIdx = strataFn(numericLists[1], 1);
+    const dIdx = strataFn(numericLists[2], 2);
+    const tcIdx = strataFn(combos, 3);
+
+    samples.push({
+      run:            i + 1,
+      temperature:    numericLists[0][tIdx],
+      chargeLoad:     numericLists[1][cIdx],
+      dischargeLoad:  numericLists[2][dIdx],
+      termCombo:      combos[tcIdx],
+      termComboIndex: tcIdx + 1,
+    });
+  }
+  return samples;
+}
+
+/**
+ * Orthogonal sampling (an LHS variant): partition the factor space into M^d
+ * equally-probable subspaces, place exactly one sample per subspace, and
+ * arrange the samples so each factor's N fine-strata are each used once
+ * (Latin hypercube property).
+ *
+ * d here is the number of *varying* factors (those with more than one level).
+ * Factors with a single level are held constant across every run. For d
+ * varying factors the sample size is fixed at N = M^d. Each varying dimension
+ * has M super-bins and N fine-bins (M^(d-1) fine-bins per super-bin). A
+ * random permutation of sub-stratum indices within each super-bin guarantees
+ * both the orthogonal (equal density per subspace) and Latin-hypercube
+ * properties simultaneously.
+ */
+function generateOrthogonal(factors, M) {
+  const allLists = [
+    factors.temperature.values,
+    factors.chargeLoad.values,
+    factors.dischargeLoad.values,
+    factors.termination.combinations,
+  ];
+
+  // Index each factor as "active" (varies, >1 level) or "fixed" (1 level).
+  // Orthogonal sampling runs over active dimensions only.
+  const activeFactorIdxs = [];
+  for (let i = 0; i < allLists.length; i++) {
+    if (allLists[i].length > 1) activeFactorIdxs.push(i);
+  }
+  const d = activeFactorIdxs.length;
+
+  // Edge case: all factors constant → a single run using each list's one value
+  if (d === 0) {
+    return [{
+      run:            1,
+      temperature:    allLists[0][0],
+      chargeLoad:     allLists[1][0],
+      dischargeLoad:  allLists[2][0],
+      termCombo:      allLists[3][0],
+      termComboIndex: 1,
+    }];
+  }
+
+  const N       = Math.pow(M, d);
+  const subBins = Math.pow(M, d - 1);
+
+  // Enumerate all M^d super-cells across the active dimensions only
+  const superCells = [];
+  (function build(dim, cur) {
+    if (dim === d) { superCells.push([...cur]); return; }
+    for (let m = 0; m < M; m++) { cur[dim] = m; build(dim + 1, cur); }
+  })(0, new Array(d));
+
+  // For each active dimension: assign each super-cell a unique fine-bin in
+  // [0..N) such that cells sharing a super-bin m get fine-bins in
+  // [m*subBins .. (m+1)*subBins). Preserves the Latin hypercube property.
+  const fineBins = [];
+  for (let dim = 0; dim < d; dim++) {
+    const cellsByBin = Array.from({ length: M }, () => []);
+    superCells.forEach((sc, idx) => cellsByBin[sc[dim]].push(idx));
+
+    const dimFineBins = new Array(superCells.length);
+    for (let m = 0; m < M; m++) {
+      const perm = fisherYates(Array.from({ length: subBins }, (_, i) => i));
+      cellsByBin[m].forEach((cellIdx, i) => {
+        dimFineBins[cellIdx] = m * subBins + perm[i];
+      });
+    }
+    fineBins.push(dimFineBins);
+  }
+
+  // Pick a list index for each factor on each sample. Fixed factors always
+  // return 0; active factors are stratified-sampled via their fine-bin.
+  const pickListIdx = (factorIdx, sampleIdx) => {
+    const list = allLists[factorIdx];
+    if (list.length <= 1) return 0;
+    const activeDim = activeFactorIdxs.indexOf(factorIdx);
+    const bin = fineBins[activeDim][sampleIdx];
+    const u   = (bin + Math.random()) / N;
+    return Math.min(Math.floor(u * list.length), list.length - 1);
+  };
+
+  return superCells.map((_, i) => {
+    const tIdx  = pickListIdx(0, i);
+    const cIdx  = pickListIdx(1, i);
+    const dIdx  = pickListIdx(2, i);
+    const tcIdx = pickListIdx(3, i);
+    return {
+      run:            i + 1,
+      temperature:    allLists[0][tIdx],
+      chargeLoad:     allLists[1][cIdx],
+      dischargeLoad:  allLists[2][dIdx],
+      termCombo:      allLists[3][tcIdx],
+      termComboIndex: tcIdx + 1,
+    };
+  });
+}
+
+// ── Validation ─────────────────────────────────────────────────────────────
+
+function validateInputs() {
+  const errors = [];
+  const warnings = [];
+  const f = state.factors;
+  const isCounts = state.inputMode === 'counts';
+
+  if (isCounts) {
+    const countChecks = [
+      ['Temperature levels',   f.temperature.values.length],
+      ['Charge load levels',   f.chargeLoad.values.length],
+      ['Discharge load levels', f.dischargeLoad.values.length],
+      ['Termination levels',   f.termination.combinations.length],
+    ];
+    countChecks.forEach(([name, n]) => {
+      if (n < 1) errors.push(`${name}: must be at least 1.`);
+    });
+  } else {
+    // Temperature
+    if (f.temperature.values.length === 0) {
+      errors.push('Temperature: please enter at least one value.');
+    } else {
+      const outOfRange = f.temperature.values.filter(
+        v => v < TEMP_MIN_ABSOLUTE || v > TEMP_MAX_ABSOLUTE
+      );
+      if (outOfRange.length > 0) {
+        errors.push(
+          `Temperature: values ${outOfRange.join(', ')} °C are outside the allowed range [${TEMP_MIN_ABSOLUTE}, ${TEMP_MAX_ABSOLUTE}] °C.`
+        );
+      }
+    }
+
+    if (f.chargeLoad.values.length === 0) {
+      errors.push('Charge Load: please enter at least one value.');
+    }
+
+    if (f.dischargeLoad.values.length === 0) {
+      errors.push('Discharge Load: please enter at least one value.');
+    }
+
+    // Termination combinations
+    if (f.termination.combinations.length === 0) {
+      errors.push('Termination Combinations: please add at least one combination.');
+    } else {
+      f.termination.combinations.forEach((c, i) => {
+        if (isNaN(c.dischargeValue)) {
+          errors.push(`Termination Combination ${i + 1}: discharge value is missing or invalid.`);
+        }
+        if (isNaN(c.chargeValue)) {
+          errors.push(`Termination Combination ${i + 1}: charge value is missing or invalid.`);
+        }
+      });
+    }
+  }
+
+  // Repeats
+  if (!Number.isInteger(state.repeats) || state.repeats < 1) {
+    errors.push('Repeats per condition: must be an integer ≥ 1.');
+  }
+
+  // Method-specific
+  if (state.method === 'lhs') {
+    const n = state.methodParams.samples;
+    if (!Number.isInteger(n) || n < 2) {
+      errors.push('LHS: number of samples must be an integer ≥ 2.');
+    }
+  }
+
+  if (state.method === 'orthogonal') {
+    const M = state.methodParams.orthogonalSubdivisions;
+    if (!Number.isInteger(M) || M < 2) {
+      errors.push('Orthogonal Sampling: subdivisions per factor must be an integer ≥ 2.');
+    } else {
+      const activeCount = [
+        f.temperature.values.length,
+        f.chargeLoad.values.length,
+        f.dischargeLoad.values.length,
+        f.termination.combinations.length,
+      ].filter(len => len > 1).length;
+      const N = activeCount === 0 ? 1 : Math.pow(M, activeCount);
+      if (N > 10000) {
+        errors.push(
+          `Orthogonal Sampling: M^${activeCount} = ${N.toLocaleString()} runs exceeds the 10,000 run limit.`
+        );
+      } else if (N > 500) {
+        warnings.push(
+          `Orthogonal Sampling: this configuration will produce ${N.toLocaleString()} runs.`
+        );
+      }
+    }
+  }
+
+  if (state.method === 'fullFactorial') {
+    const lengths = [
+      f.temperature.values.length,
+      f.chargeLoad.values.length,
+      f.dischargeLoad.values.length,
+      f.termination.combinations.length,
+    ];
+    if (lengths.every(l => l > 0)) {
+      const totalRuns = lengths.reduce((a, b) => a * b, 1);
+      if (totalRuns > 10000) {
+        errors.push(
+          `Full Factorial: this configuration would produce ${totalRuns.toLocaleString()} runs, which exceeds the 10,000 run limit.`
+        );
+      } else if (totalRuns > 500) {
+        warnings.push(
+          `Full Factorial: this configuration will produce ${totalRuns.toLocaleString()} runs.`
+        );
+      }
+    }
+  }
+
+  return { errors, warnings };
+}
+
+// ── Dispatcher ─────────────────────────────────────────────────────────────
+
+function validateAndGenerate() {
+  syncStateFromDOM();
+
+  const { errors, warnings } = validateInputs();
+  const errContainer = document.getElementById('validation-errors');
+  errContainer.innerHTML = '';
+
+  if (warnings.length > 0) {
+    const ul = document.createElement('ul');
+    ul.className = 'warning-list';
+    warnings.forEach(w => {
+      const li = document.createElement('li');
+      li.textContent = w;
+      ul.appendChild(li);
+    });
+    errContainer.appendChild(ul);
+  }
+
+  if (errors.length > 0) {
+    const ul = document.createElement('ul');
+    ul.className = 'error-list';
+    errors.forEach(e => {
+      const li = document.createElement('li');
+      li.textContent = e;
+      ul.appendChild(li);
+    });
+    errContainer.appendChild(ul);
+    return;
+  }
+
+  const f = state.factors;
+  let runs;
+  if (state.method === 'fullFactorial') {
+    runs = generateFullFactorial(f);
+  } else if (state.method === 'lhs') {
+    runs = generateLHS(f, state.methodParams.samples);
+  } else {
+    runs = generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
+  }
+
+  state.results        = runs;
+  state.highlightedRun = null;
+
+  document.getElementById('results').classList.remove('hidden');
+
+  updateExperimentDisplays();
+
+  renderTable(runs);
+  renderPlots(runs);
+  renderParCoords(runs);
+
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Experiment stats display ───────────────────────────────────────────────
+
+/**
+ * Update both the left-panel summary line and the stats card above the 3D
+ * plot. Called on generate and whenever the repeats input changes.
+ */
+function updateExperimentDisplays() {
+  const statRuns       = document.getElementById('stat-runs');
+  const statRepeats    = document.getElementById('stat-repeats');
+  const statCells      = document.getElementById('stat-cells');
+  const statMethod     = document.getElementById('stat-method');
+  const resultsSummary = document.getElementById('results-summary');
+
+  if (!state.results) {
+    [statRuns, statRepeats, statCells, statMethod].forEach(el => {
+      if (el) el.textContent = '—';
+    });
+    if (resultsSummary) resultsSummary.textContent = '';
+    return;
+  }
+
+  const nRuns  = state.results.length;
+  const nCells = nRuns * state.repeats;
+
+  const methodShort = {
+    fullFactorial: 'Full Factorial',
+    lhs:           'Latin Hypercube',
+    orthogonal:    `Orthogonal M=${state.methodParams.orthogonalSubdivisions}`,
+  };
+  const methodLong = {
+    fullFactorial: 'Full Factorial',
+    lhs:           'Latin Hypercube Sampling',
+    orthogonal:    `Orthogonal Sampling (M=${state.methodParams.orthogonalSubdivisions})`,
+  };
+
+  if (statRuns)    statRuns.textContent    = nRuns;
+  if (statRepeats) statRepeats.textContent = state.repeats;
+  if (statCells)   statCells.textContent   = nCells;
+  if (statMethod)  statMethod.textContent  = methodShort[state.method];
+
+  if (resultsSummary) {
+    resultsSummary.textContent =
+      `${nRuns} run${nRuns !== 1 ? 's' : ''} · ${nCells} cell${nCells !== 1 ? 's' : ''} · ${methodLong[state.method]}`;
+  }
+}
+
+// ── Table rendering ────────────────────────────────────────────────────────
+
+function renderTable(runs) {
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
+
+  let headers, getCells;
+
+  if (isCounts) {
+    headers = ['Run', 'Temperature', 'Charge Load', 'Discharge Load', 'Termination'];
+    getCells = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex];
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    headers = [
+      'Run',
+      'Temperature (°C)',
+      `Charge Load (${chargeUnit})`,
+      `Discharge Load (${dischUnit})`,
+      'Disch. Term. Type',
+      'Disch. Term. Value',
+      'Chg. Term. Type',
+      'Chg. Term. Value',
+    ];
+    getCells = r => {
+      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
+      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
+      return [
+        r.run,
+        fmt(r.temperature),
+        fmt(r.chargeLoad),
+        fmt(r.dischargeLoad),
+        r.termCombo.dischargeType,
+        `${fmt(r.termCombo.dischargeValue)} ${du}`,
+        r.termCombo.chargeType,
+        `${fmt(r.termCombo.chargeValue)} ${cu}`,
+      ];
+    };
+  }
+
+  const thead = document.getElementById('doe-thead');
+  const tbody = document.getElementById('doe-tbody');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  const tr = document.createElement('tr');
+  headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr);
+
+  runs.forEach(r => {
+    const row = document.createElement('tr');
+    getCells(r).forEach((v, i) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (i === 0) td.style.textAlign = 'center';
+      row.appendChild(td);
+    });
+    tbody.appendChild(row);
+  });
+}
+
+// ── Plot rendering ─────────────────────────────────────────────────────────
+
+/** Returns the list of plottable variables with current unit labels. */
+function getVarOptions() {
+  if (state.inputMode === 'counts') {
+    return [
+      { key: 'temperature',    label: 'Temperature level' },
+      { key: 'chargeLoad',     label: 'Charge load level' },
+      { key: 'dischargeLoad',  label: 'Discharge load level' },
+      { key: 'termComboIndex', label: 'Termination level' },
+    ];
+  }
+  const chargeUnit = state.factors.chargeLoad.unit;
+  const dischUnit  = state.factors.dischargeLoad.unit;
+  return [
+    { key: 'temperature',    label: 'Temperature (°C)' },
+    { key: 'chargeLoad',     label: `Charge Load (${chargeUnit})` },
+    { key: 'dischargeLoad',  label: `Discharge Load (${dischUnit})` },
+    { key: 'termComboIndex', label: 'Termination Combo' },
+  ];
+}
+
+const PLOT3D_CONFIG = {
+  plotId:   'plot-3d',
+  xSelId:   'plot3d-x',
+  ySelId:   'plot3d-y',
+  zSelId:   'plot3d-z',
+  defaultX: 'temperature',
+  defaultY: 'chargeLoad',
+  defaultZ: 'dischargeLoad',
+};
+
+const PLOT2D_CONFIG = {
+  plotId:   'plot-2d',
+  xSelId:   'plot2d-x',
+  ySelId:   'plot2d-y',
+  defaultX: 'temperature',
+  defaultY: 'chargeLoad',
+};
+
+/**
+ * Per-axis helper: looks up the selected variable, extracts raw values, builds
+ * display-friendly strings (combo labels / level labels) and produces a Plotly
+ * axis layout object. Used by both 2D and 3D plot renderers.
+ */
+function computePlotAxis(runs, key) {
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
+  const vars     = getVarOptions();
+  const vari     = vars.find(v => v.key === key);
+
+  const getVal  = (r, k) => k === 'termComboIndex' ? r.termComboIndex : r[k];
+  const values  = runs.map(r => getVal(r, key));
+
+  const displayValues = runs.map((r, i) => {
+    const v = values[i];
+    if (key !== 'termComboIndex') return v;
+    if (isCounts) return `Level ${r.termComboIndex}`;
+    const combo = f.termination.combinations[r.termComboIndex - 1];
+    return combo ? comboLabel(combo) : `Combo ${r.termComboIndex}`;
+  });
+
+  const buildLayout = (extra = {}) => {
+    const base = { title: { text: vari.label, font: { size: 12 } }, ...extra };
+    if (key !== 'termComboIndex') return base;
+    const uniqueIdx = [...new Set(values)].sort((a, b) => a - b);
+    const ticktext  = uniqueIdx.map(idx => {
+      if (isCounts) return `Level ${idx}`;
+      const combo = f.termination.combinations[idx - 1];
+      return combo ? comboLabel(combo) : `Combo ${idx}`;
+    });
+    return { ...base, tickmode: 'array', tickvals: uniqueIdx, ticktext };
+  };
+
+  return { label: vari.label, values, displayValues, buildLayout };
+}
+
+function render3DPlot(runs) {
+  const { plotId, xSelId, ySelId, zSelId } = PLOT3D_CONFIG;
+  const xKey = document.getElementById(xSelId).value;
+  const yKey = document.getElementById(ySelId).value;
+  const zKey = document.getElementById(zSelId).value;
+
+  const x = computePlotAxis(runs, xKey);
+  const y = computePlotAxis(runs, yKey);
+  const z = computePlotAxis(runs, zKey);
+
+  const hoverTexts = runs.map((r, i) =>
+    `${x.label}: <b>${x.displayValues[i]}</b><br>` +
+    `${y.label}: <b>${y.displayValues[i]}</b><br>` +
+    `${z.label}: <b>${z.displayValues[i]}</b><br>` +
+    `<i>Run ${r.run}</i>`
+  );
+
+  const trace = {
+    type:          'scatter3d',
+    mode:          'markers',
+    x:             x.values,
+    y:             y.values,
+    z:             z.values,
+    text:          hoverTexts,
+    hovertemplate: '%{text}<extra></extra>',
+    marker: {
+      size:    5,
+      color:   '#33b257',
+      opacity: 0.85,
+      line:    { width: 0.5, color: '#1e6632' },
+    },
+  };
+
+  const layout = {
+    scene: {
+      xaxis:  x.buildLayout(),
+      yaxis:  y.buildLayout(),
+      zaxis:  z.buildLayout(),
+      camera: { eye: { x: 1.6, y: 1.6, z: 1.2 } },
+    },
+    margin:        { t: 10, r: 10, b: 10, l: 10 },
+    autosize:      true,
+    paper_bgcolor: '#ffffff',
+    font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
+  };
+
+  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
+}
+
+function render2DPlot(runs) {
+  const { plotId, xSelId, ySelId } = PLOT2D_CONFIG;
+  const xKey = document.getElementById(xSelId).value;
+  const yKey = document.getElementById(ySelId).value;
+
+  const x = computePlotAxis(runs, xKey);
+  const y = computePlotAxis(runs, yKey);
+
+  const hoverTexts = runs.map((r, i) =>
+    `${x.label}: <b>${x.displayValues[i]}</b><br>` +
+    `${y.label}: <b>${y.displayValues[i]}</b><br>` +
+    `<i>Run ${r.run}</i>`
+  );
+
+  const trace = {
+    type:          'scatter',
+    mode:          'markers',
+    x:             x.values,
+    y:             y.values,
+    text:          hoverTexts,
+    hovertemplate: '%{text}<extra></extra>',
+    marker: {
+      size:    10,
+      color:   '#33b257',
+      opacity: 0.8,
+      line:    { width: 1, color: '#1e6632' },
+    },
+  };
+
+  const layout = {
+    xaxis:         x.buildLayout({ automargin: true }),
+    yaxis:         y.buildLayout({ automargin: true }),
+    margin:        { t: 20, r: 20, b: 50, l: 60 },
+    autosize:      true,
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor:  '#fafafa',
+    font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
+  };
+
+  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
+}
+
+/** Render whichever scatter plot is currently active (2D or 3D). */
+function renderActivePlot(runs) {
+  if (state.plotTab === '2d') render2DPlot(runs);
+  else                        render3DPlot(runs);
+}
+
+function renderPlots(runs) {
+  const varOptions = getVarOptions();
+
+  const allSelectors = [
+    [PLOT3D_CONFIG.xSelId, PLOT3D_CONFIG.defaultX],
+    [PLOT3D_CONFIG.ySelId, PLOT3D_CONFIG.defaultY],
+    [PLOT3D_CONFIG.zSelId, PLOT3D_CONFIG.defaultZ],
+    [PLOT2D_CONFIG.xSelId, PLOT2D_CONFIG.defaultX],
+    [PLOT2D_CONFIG.ySelId, PLOT2D_CONFIG.defaultY],
+  ];
+
+  allSelectors.forEach(([selId, def]) => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+
+    // Preserve current selection before repopulating (empty string on first call)
+    const prev = sel.value;
+    sel.innerHTML = '';
+    varOptions.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value       = v.key;
+      opt.textContent = v.label;
+      sel.appendChild(opt);
+    });
+    sel.value = varOptions.some(v => v.key === prev) ? prev : def;
+  });
+
+  renderActivePlot(runs);
+}
+
+// ── Parallel coordinates plot ──────────────────────────────────────────────
+
+function renderParCoords(runs) {
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
+
+  // Colour lines by run number for easy visual separation
+  const runNums = runs.map(r => r.run);
+  const nRuns   = runs.length;
+
+  let dimensions;
+
+  if (isCounts) {
+    dimensions = [
+      { label: 'Temperature',    values: runs.map(r => r.temperature)    },
+      { label: 'Charge Load',    values: runs.map(r => r.chargeLoad)     },
+      { label: 'Discharge Load', values: runs.map(r => r.dischargeLoad)  },
+      { label: 'Termination',    values: runs.map(r => r.termComboIndex) },
+    ];
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+
+    // Build combo tick maps for the termination axis
+    const combos       = f.termination.combinations;
+    const comboIndices = runs.map(r => r.termComboIndex);
+    const uniqueIdx    = [...new Set(comboIndices)].sort((a, b) => a - b);
+    const ticktext     = uniqueIdx.map(i => {
+      const c = combos[i - 1];
+      return c ? comboLabel(c) : `Combo ${i}`;
+    });
+
+    dimensions = [
+      { label: 'Temperature (°C)',              values: runs.map(r => r.temperature)    },
+      { label: `Charge Load (${chargeUnit})`,   values: runs.map(r => r.chargeLoad)     },
+      { label: `Discharge Load (${dischUnit})`, values: runs.map(r => r.dischargeLoad)  },
+      { label: 'Term. Combo',                   values: comboIndices, tickvals: uniqueIdx, ticktext },
+    ];
+  }
+
+  const hasHighlight = state.highlightedRun !== null;
+
+  const lineConfig = hasHighlight
+    ? {
+        color:      runNums.map(n => n === state.highlightedRun ? 1 : 0),
+        colorscale: [[0, 'rgba(150, 150, 150, 0.15)'], [1, '#f0421c']],
+        cmin:       0,
+        cmax:       1,
+        showscale:  false,
+      }
+    : {
+        color:      runNums,
+        colorscale: [[0, '#58b8fe'], [0.5, '#33b257'], [1, '#1e6632']],
+        showscale:  true,
+        cmin:       1,
+        cmax:       nRuns,
+        colorbar: {
+          title:      { text: 'Run', side: 'right' },
+          thickness:  14,
+          len:        0.8,
+        },
+      };
+
+  const trace = {
+    type:       'parcoords',
+    line:       lineConfig,
+    dimensions,
+  };
+
+  const layout = {
+    margin:        { t: 40, r: 80, b: 80, l: 60 },
+    autosize:      true,
+    paper_bgcolor: '#ffffff',
+    font:          { size: 11 },
+  };
+
+  Plotly.react('plot-parcoords', [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+// ── Parallel-coordinates click-to-highlight ────────────────────────────────
+
+/**
+ * Parcoords lines are drawn onto a canvas so Plotly can't emit click events on
+ * individual lines. We reproduce the plot's geometry from the known layout
+ * margins and linearly interpolate each run's y-position in the clicked
+ * segment to decide which line the user clicked on.
+ *
+ * IMPORTANT: the margin object here must stay in sync with the parcoords
+ * layout in renderParCoords.
+ */
+const PARCOORDS_MARGIN      = { t: 40, r: 80, b: 80, l: 60 };
+const PARCOORDS_CLICK_RADIUS = 10; // px — max distance from line that counts as a hit
+const PARCOORDS_AXIS_DEADZONE = 6; // px — avoid conflict with axis-drag/brush
+
+function findNearestParcoordsLine(cx, cy, container, runs) {
+  const rect   = container.getBoundingClientRect();
+  const width  = rect.width;
+  const height = rect.height;
+  const m      = PARCOORDS_MARGIN;
+  const plotW  = width  - m.l - m.r;
+  const plotH  = height - m.t - m.b;
+
+  // Click must land inside the plot area
+  if (cx < m.l || cx > width - m.r || cy < m.t || cy > height - m.b) return -1;
+  if (plotW <= 0 || plotH <= 0) return -1;
+
+  const dimsData = [
+    runs.map(r => r.temperature),
+    runs.map(r => r.chargeLoad),
+    runs.map(r => r.dischargeLoad),
+    runs.map(r => r.termComboIndex),
+  ];
+  const nDims = dimsData.length;
+
+  // Axis positions (evenly spaced across plot width — matches Plotly parcoords default)
+  const axisXs = [];
+  for (let i = 0; i < nDims; i++) {
+    axisXs.push(nDims === 1 ? m.l + plotW / 2 : m.l + (i / (nDims - 1)) * plotW);
+  }
+
+  // Skip clicks right on an axis — let Plotly handle axis drag / brush there
+  for (let i = 0; i < nDims; i++) {
+    if (Math.abs(cx - axisXs[i]) < PARCOORDS_AXIS_DEADZONE) return -1;
+  }
+
+  // Locate which segment between two axes the click falls in
+  let segIdx = -1;
+  for (let i = 0; i < nDims - 1; i++) {
+    if (cx >= axisXs[i] && cx < axisXs[i + 1]) { segIdx = i; break; }
+  }
+  if (segIdx === -1) return -1;
+
+  // Per-dimension value range (matches Plotly's auto-scaling)
+  const ranges = dimsData.map(vals => ({
+    min: Math.min(...vals),
+    max: Math.max(...vals),
+  }));
+
+  const valueToY = (di, val) => {
+    const { min, max } = ranges[di];
+    if (max === min) return m.t + plotH / 2;
+    return m.t + (1 - (val - min) / (max - min)) * plotH;
+  };
+
+  const x1 = axisXs[segIdx];
+  const x2 = axisXs[segIdx + 1];
+  const tX = (cx - x1) / (x2 - x1);
+
+  let bestRun  = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < runs.length; i++) {
+    const y1 = valueToY(segIdx,     dimsData[segIdx    ][i]);
+    const y2 = valueToY(segIdx + 1, dimsData[segIdx + 1][i]);
+    const y  = y1 + tX * (y2 - y1);
+    const d  = Math.abs(cy - y);
+    if (d < bestDist) { bestDist = d; bestRun = i; }
+  }
+  return bestDist <= PARCOORDS_CLICK_RADIUS ? bestRun : -1;
+}
+
+function setupParcoordsInteraction() {
+  const container = document.getElementById('plot-parcoords');
+  if (!container) return;
+
+  let mouseDown = null;
+
+  container.addEventListener('mousedown', e => {
+    mouseDown = { x: e.clientX, y: e.clientY };
+  });
+
+  container.addEventListener('mouseup', e => {
+    const down = mouseDown;
+    mouseDown = null;
+    if (!down || !state.results) return;
+
+    // Discard drags (axis brush / axis reorder)
+    if (Math.abs(e.clientX - down.x) > 4 || Math.abs(e.clientY - down.y) > 4) return;
+
+    const rect = container.getBoundingClientRect();
+    const cx   = e.clientX - rect.left;
+    const cy   = e.clientY - rect.top;
+
+    const hitIdx = findNearestParcoordsLine(cx, cy, container, state.results);
+    if (hitIdx === -1) {
+      if (state.highlightedRun !== null) {
+        state.highlightedRun = null;
+        renderParCoords(state.results);
+      }
+      return;
+    }
+
+    const runNum = state.results[hitIdx].run;
+    state.highlightedRun = state.highlightedRun === runNum ? null : runNum;
+    renderParCoords(state.results);
+  });
+}
+
+// ── CSV download ───────────────────────────────────────────────────────────
+
+function downloadCSV() {
+  if (!state.results) return;
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
+
+  let header, makeRow;
+
+  if (isCounts) {
+    header  = ['Run', 'TemperatureLevel', 'ChargeLoadLevel', 'DischargeLoadLevel', 'TerminationLevel'].join(',');
+    makeRow = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex].join(',');
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    header = [
+      'Run',
+      'Temperature_degC',
+      `ChargeLoad_${chargeUnit}`,
+      `DischargeLoad_${dischUnit}`,
+      'DischargeTermType',
+      'DischargeTermValue',
+      'ChargeTermType',
+      'ChargeTermValue',
+    ].join(',');
+    makeRow = r => {
+      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
+      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
+      return [
+        r.run,
+        r.temperature,
+        r.chargeLoad,
+        r.dischargeLoad,
+        r.termCombo.dischargeType,
+        `${r.termCombo.dischargeValue} ${du}`,
+        r.termCombo.chargeType,
+        `${r.termCombo.chargeValue} ${cu}`,
+      ].join(',');
+    };
+  }
+
+  const rows = state.results.map(makeRow);
+  const csv  = [header, ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const date = new Date().toISOString().slice(0, 10);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `doe_${state.method}_${date}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── DOM synchronisation ────────────────────────────────────────────────────
+
+/**
+ * Counts-mode sync: each factor's values become [1..N] where N is a user-
+ * supplied count. Termination "combos" become N placeholder objects so the
+ * existing DoE generators / renderers work unchanged.
+ */
+function syncStateFromCountsDOM() {
+  const readCount = id => {
+    const raw = document.getElementById(id).value;
+    const v   = parseInt(raw, 10);
+    return Number.isInteger(v) && v >= 1 ? v : 0;
+  };
+  const seq = n => Array.from({ length: n }, (_, i) => i + 1);
+
+  const nTemp      = readCount('input-temp-count');
+  const nCharge    = readCount('input-charge-count');
+  const nDischarge = readCount('input-discharge-count');
+  const nTerm      = readCount('input-term-count');
+
+  state.factors.temperature.values   = seq(nTemp);
+  state.factors.chargeLoad.values    = seq(nCharge);
+  state.factors.dischargeLoad.values = seq(nDischarge);
+  state.factors.termination.combinations = seq(nTerm).map(i => ({
+    dischargeType:  'Voltage', dischargeValue: i,
+    chargeType:     'Voltage', chargeValue:    i,
+  }));
+}
+
+function syncStateFromDOM() {
+  if (state.inputMode === 'counts') {
+    syncStateFromCountsDOM();
+    return;
+  }
+
+  const parseAndStore = (inputId, factorKey) => {
+    const raw = document.getElementById(inputId).value;
+    const result = parseValueList(raw);
+    state.factors[factorKey].values = result.values;
+    document.getElementById(inputId).classList.toggle('invalid', result.invalid && raw.trim() !== '');
+    return result.hadDuplicates;
+  };
+
+  const dupWarnings = [];
+  if (parseAndStore('input-temperature',  'temperature'))   dupWarnings.push('Temperature');
+  if (parseAndStore('input-charge',       'chargeLoad'))    dupWarnings.push('Charge Load');
+  if (parseAndStore('input-discharge',    'dischargeLoad')) dupWarnings.push('Discharge Load');
+
+  if (dupWarnings.length > 0) {
+    const errContainer = document.getElementById('validation-errors');
+    const notice = document.createElement('p');
+    notice.style.cssText = 'font-size:0.8rem;color:var(--color-warning);margin:0 0 0.5rem';
+    notice.textContent = `Duplicate values removed from: ${dupWarnings.join(', ')}.`;
+    errContainer.prepend(notice);
+  }
+
+  syncCombosFromDOM();
+}
+
+// ── Orthogonal sampling badge update ───────────────────────────────────────
+
+/**
+ * Count how many factors actually vary (>1 level) based on the current DOM
+ * state. Reads from whichever input mode is active so the badge stays in
+ * sync before Generate is pressed.
+ */
+function countActiveOrthogonalFactors() {
+  if (state.inputMode === 'counts') {
+    return ['input-temp-count', 'input-charge-count', 'input-discharge-count', 'input-term-count']
+      .filter(id => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const v = parseInt(el.value, 10);
+        return Number.isInteger(v) && v > 1;
+      }).length;
+  }
+
+  let active = 0;
+  const uniqueCount = id => {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    return parseValueList(el.value).values.length;
+  };
+  if (uniqueCount('input-temperature') > 1) active++;
+  if (uniqueCount('input-charge')      > 1) active++;
+  if (uniqueCount('input-discharge')   > 1) active++;
+  if (document.querySelectorAll('.term-combo-row').length > 1) active++;
+  return active;
+}
+
+function updateOrthogonalBadge() {
+  const orthInput = document.getElementById('input-orthogonal-subdivisions');
+  const badge     = document.getElementById('orthogonal-sample-count');
+  const hint      = document.getElementById('orthogonal-sample-hint');
+  if (!orthInput) return;
+
+  const M = parseInt(orthInput.value, 10);
+  if (!Number.isInteger(M) || M < 2) {
+    if (badge) { badge.textContent = '—'; badge.style.color = 'var(--orange)'; }
+    if (hint)  { hint.textContent  = 'enter an integer ≥ 2'; hint.style.color = 'var(--orange)'; }
+    return;
+  }
+
+  const n = countActiveOrthogonalFactors();
+  const N = n === 0 ? 1 : Math.pow(M, n);
+
+  if (badge) { badge.textContent = N.toLocaleString(); badge.style.color = ''; }
+  if (hint) {
+    hint.style.color = '';
+    hint.textContent = n === 0
+      ? 'all factors constant → 1 run'
+      : n === 4
+        ? `M⁴ = ${M}⁴ = ${N.toLocaleString()}`
+        : `M^${n} = ${M}^${n} = ${N.toLocaleString()} (${n} varying factor${n === 1 ? '' : 's'})`;
+  }
+}
+
+// ── Initialisation ─────────────────────────────────────────────────────────
+
+function init() {
+  // Input-mode toggle (Exact values / Level counts)
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      if (mode !== 'values' && mode !== 'counts') return;
+      state.inputMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode)
+      );
+      const valuesPanel = document.getElementById('mode-values');
+      const countsPanel = document.getElementById('mode-counts');
+      if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
+      if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
+      updateOrthogonalBadge();
+    });
+  });
+
+  // Method radio buttons
+  document.querySelectorAll('input[name="doe-method"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      document.querySelectorAll('.method-extra').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`extra-${radio.value}`).classList.remove('hidden');
+      state.method = radio.value;
+    });
+  });
+
+  // LHS samples
+  document.getElementById('input-lhs-samples').addEventListener('input', e => {
+    state.methodParams.samples = parseInt(e.target.value, 10);
+  });
+
+  // Orthogonal sampling — subdivisions per factor (M)
+  const orthInput = document.getElementById('input-orthogonal-subdivisions');
+  if (orthInput) {
+    orthInput.addEventListener('input', () => {
+      const M = parseInt(orthInput.value, 10);
+      state.methodParams.orthogonalSubdivisions = M;
+      updateOrthogonalBadge();
+    });
+  }
+
+  // The "total runs" badge depends on both M and on how many factors vary.
+  // Refresh it whenever any input in the left panel changes, or when combo
+  // rows are added/removed.
+  const panel = document.querySelector('.panel');
+  if (panel) panel.addEventListener('input', updateOrthogonalBadge);
+  const comboList = document.getElementById('term-combo-list');
+  if (comboList) {
+    new MutationObserver(updateOrthogonalBadge).observe(comboList, { childList: true });
+  }
+
+  // Charge unit
+  document.getElementById('select-charge-unit').addEventListener('change', e => {
+    state.factors.chargeLoad.unit = e.target.value;
+  });
+
+  // Discharge unit
+  document.getElementById('select-discharge-unit').addEventListener('change', e => {
+    state.factors.dischargeLoad.unit = e.target.value;
+  });
+
+  // Repeats per condition
+  const repeatsEl = document.getElementById('input-repeats');
+  if (repeatsEl) {
+    repeatsEl.addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      state.repeats = Number.isInteger(v) && v >= 1 ? v : 1;
+      updateExperimentDisplays();
+    });
+  }
+
+  // Add combination button
+  document.getElementById('btn-add-combo').addEventListener('click', () => addComboRow());
+
+  // Generate button
+  document.getElementById('btn-generate').addEventListener('click', validateAndGenerate);
+
+  // Download CSV button
+  document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
+
+  // Live invalid-highlight on blur for numeric factor inputs
+  ['input-temperature', 'input-charge', 'input-discharge'].forEach(id => {
+    document.getElementById(id).addEventListener('blur', () => {
+      const raw = document.getElementById(id).value;
+      const result = parseValueList(raw);
+      document.getElementById(id).classList.toggle('invalid', result.invalid && raw.trim() !== '');
+    });
+  });
+
+  // 3D plot axis selectors — re-render on change
+  [PLOT3D_CONFIG.xSelId, PLOT3D_CONFIG.ySelId, PLOT3D_CONFIG.zSelId].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (state.results) render3DPlot(state.results);
+    });
+  });
+
+  // 2D plot axis selectors — re-render on change
+  [PLOT2D_CONFIG.xSelId, PLOT2D_CONFIG.ySelId].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (state.results) render2DPlot(state.results);
+    });
+  });
+
+  // Plot tab buttons (2D / 3D)
+  document.querySelectorAll('.plot-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.plot;
+      if (tab !== '2d' && tab !== '3d') return;
+      state.plotTab = tab;
+      document.querySelectorAll('.plot-tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.plot === tab)
+      );
+      const cell3d = document.querySelector('.plot-cell-3d');
+      const cell2d = document.querySelector('.plot-cell-2d');
+      if (cell3d) cell3d.classList.toggle('hidden', tab !== '3d');
+      if (cell2d) cell2d.classList.toggle('hidden', tab !== '2d');
+      if (state.results) renderActivePlot(state.results);
+    });
+  });
+
+  // Add one default combo row to start
+  addComboRow();
+
+  // Click-to-highlight on the parallel-coordinates plot
+  setupParcoordsInteraction();
+
+  // Initial badge render (one default combo row + default input values)
+  updateOrthogonalBadge();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
 <style>
 :root {
   --green:        #33b257;
@@ -432,12 +1786,12 @@ code {
   box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
 }
 
-.taguchi-array-badge {
+.method-result-badge {
   margin: 6px 0 8px;
   font-size: 0.78rem;
   color: var(--gray-muted);
 }
-.taguchi-array-badge strong { color: var(--green); }
+.method-result-badge strong { color: var(--green); }
 
 .method-extra-hint {
   font-size: 0.75rem;
@@ -560,6 +1914,14 @@ code {
   margin-top: 4px;
 }
 .plot-section-title:not(:first-child) { margin-top: 16px; }
+
+.plot-hint {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--gray-subtle);
+  text-transform: none;
+  letter-spacing: normal;
+}
 
 .plot-cell {
   border: 1px solid var(--gray-border);
@@ -973,27 +2335,27 @@ code {
             <input type="number" id="input-lhs-samples" class="param-input" value="20" min="2" step="1" />
           </div>
           <p class="method-extra-hint">
-            Samples are drawn to cover the factor value space evenly without testing all combinations.
+            Draws the number of samples you set above, spread across the factor space so each factor's values are used about equally often. Falls between full factorial (exhaustive — every combination) and orthogonal sampling (a stricter LHS variant with a fixed run count of M<sup>n</sup>): plain LHS lets you pick any sample count but doesn't enforce equal density across every subregion of the space. Good for screening many factors or getting a first look at trends. Each generate produces a fresh random sample, so re-run for a different design.
           </p>
         </div>
       </div>
 
       <div class="method-option">
         <label class="method-label">
-          <input type="radio" name="doe-method" id="radio-taguchi" value="taguchi" />
-          Taguchi Orthogonal Array
+          <input type="radio" name="doe-method" id="radio-orthogonal" value="orthogonal" />
+          Orthogonal Sampling
         </label>
-        <div class="method-extra hidden" id="extra-taguchi">
+        <div class="method-extra hidden" id="extra-orthogonal">
           <div class="method-param-row">
-            <label for="input-taguchi-levels">Levels per factor</label>
-            <input type="number" id="input-taguchi-levels" class="param-input" value="2" min="2" max="5" step="1" />
+            <label for="input-orthogonal-subdivisions">Subdivisions per factor (M)</label>
+            <input type="number" id="input-orthogonal-subdivisions" class="param-input" value="2" min="2" max="5" step="1" />
           </div>
-          <p class="taguchi-array-badge">
-            Auto-selected array: <strong id="taguchi-array-name">L8</strong>
-            &nbsp;·&nbsp; <span id="taguchi-array-hint" style="font-weight:normal">L8: 8 runs</span>
+          <p class="method-result-badge">
+            Total runs: <strong id="orthogonal-sample-count">16</strong>
+            &nbsp;·&nbsp; <span id="orthogonal-sample-hint" style="font-weight:normal">M⁴ = 2⁴ = 16</span>
           </p>
           <p class="method-extra-hint">
-            Supported levels: 2 → L8, 3 → L9, 4 → L16, 5 → L25. Uses the first N values from each list.
+            A stricter LHS variant: partitions the factor space into M<sup>n</sup> equally-probable subspaces (M subdivisions per each <em>varying</em> factor) and picks exactly one sample per subspace, while keeping each factor's values used evenly (the Latin hypercube property). Gives more uniform coverage than plain LHS — every subregion of the space is sampled with the same density. Run count is fixed at M<sup>n</sup>, where n is the number of factors you've set to more than one level (factors left at a single value are held constant and don't count toward n).
           </p>
         </div>
       </div>
@@ -1096,7 +2458,10 @@ code {
           <div id="plot-2d" class="plot-div-2d"></div>
         </div>
 
-        <div class="plot-section-title">Parallel Coordinates</div>
+        <div class="plot-section-title">
+          Parallel Coordinates
+          <span class="plot-hint"> — click a line to highlight it, click again or elsewhere to clear</span>
+        </div>
         <div class="parcoords-cell">
           <div id="plot-parcoords" class="plot-parcoords"></div>
         </div>

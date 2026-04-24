@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Degradation DoE Designer</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.plot.ly/plotly-3.5.0.min.js" defer></script>
+<script src="doe.js" defer></script>
+<style>
+:root {
+  --green:        #33b257;
+  --green-light:  #7dda98;
+  --green-dark:   #1e6632;
+  --green-bg:     rgba(51, 178, 87, 0.15);
+  --blue:         #58b8fe;
+  --blue-dark:    #1a6eb5;
+  --blue-bg:      rgba(88, 184, 254, 0.15);
+  --gray:         #323232;
+  --gray-light:   #dadada;
+  --gray-bg:      #f5f5f5;
+  --gray-border:  #e5e7eb;
+  --gray-muted:   #6b7280;
+  --gray-subtle:  #9ca3af;
+  --gray-100:     #f3f4f6;
+  --gray-200:     #e5e7eb;
+  --red:          #f0421c;
+  --orange:       #ffa500;
+  --font:         'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius-sm:    4px;
+  --radius-md:    6px;
+  --radius-lg:    8px;
+  --radius-xl:    12px;
+  --radius-2xl:   16px;
+  --shadow-sm:    0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md:    0 1px 4px rgba(0,0,0,0.08);
+  --transition:   150ms ease-in-out;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: var(--font);
+  background: var(--gray-bg);
+  color: var(--gray);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.85em;
+  background: var(--gray-200);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--gray-border);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+.header h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--gray);
+}
+.header .accent { color: var(--green); }
+.header .subtitle {
+  font-size: 0.8rem;
+  color: var(--gray-muted);
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left Panel ── */
+.panel {
+  width: 400px;
+  min-width: 400px;
+  overflow-y: auto;
+  border-right: 1px solid var(--gray-border);
+  background: #ffffff;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--gray-muted);
+  margin-bottom: 8px;
+}
+
+.section-hint {
+  color: var(--gray-muted);
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+/* ── Input-mode toggle (pill tabs) ── */
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--gray-100);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+}
+.mode-btn {
+  flex: 1;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--gray-muted);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.mode-btn.active {
+  background: #ffffff;
+  color: var(--green);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.mode-btn:hover:not(.active) { color: var(--gray); }
+.mode-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
+
+/* ── Factor cards ── */
+.factor-card {
+  background: var(--gray-bg);
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-xl);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.factor-card:last-child { margin-bottom: 0; }
+
+.factor-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray);
+  margin-bottom: 6px;
+}
+
+.factor-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.factor-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  font-size: 0.85rem;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  color: var(--gray);
+  background: #ffffff;
+  outline: none;
+  transition: var(--transition);
+}
+.factor-input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
+.factor-input.invalid {
+  border-color: var(--red);
+  background: #fef2f2;
+}
+
+.unit-label {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--gray-muted);
+  min-width: 1.75rem;
+  font-weight: 500;
+}
+
+.unit-select {
+  flex-shrink: 0;
+  padding: 7px 26px 7px 10px;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  font-size: 0.85rem;
+  font-family: var(--font);
+  color: var(--gray);
+  background: #ffffff;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  outline: none;
+  transition: var(--transition);
+}
+.unit-select:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
+
+.field-hint {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--gray-muted);
+}
+
+/* ── Termination combinations ── */
+.term-combo-wrap {
+  background: #ffffff;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.term-combo-header {
+  display: none; /* hidden in stacked layout */
+}
+
+.term-combo-row {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr 1.7rem;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 10px;
+  align-items: start;
+  padding: 12px 12px 14px;
+  border-bottom: 1px solid var(--gray-border);
+}
+.term-combo-row:last-child { border-bottom: none; }
+.term-combo-row:nth-child(even) { background: var(--gray-bg); }
+
+.combo-index {
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  align-self: start;
+  justify-self: center;
+  margin-top: 18px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--green-dark);
+  background: var(--green-bg);
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.term-combo-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.term-combo-row > .term-combo-cell:nth-of-type(1) {
+  grid-row: 1;
+  grid-column: 2;
+}
+.term-combo-row > .term-combo-cell:nth-of-type(2) {
+  grid-row: 2;
+  grid-column: 2;
+}
+
+.combo-side-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--gray-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.term-combo-cell-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.term-combo-cell .unit-select {
+  flex: 0 0 auto;
+  padding: 6px 22px 6px 8px;
+  font-size: 0.75rem;
+}
+.term-combo-cell .factor-input {
+  flex: 1;
+  min-width: 60px;
+  font-size: 0.88rem;
+  padding: 6px 10px;
+}
+.term-combo-cell .unit-label {
+  font-size: 0.78rem;
+  min-width: 1.5rem;
+  text-align: left;
+}
+
+.btn-remove-combo {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  align-self: start;
+  justify-self: center;
+  margin-top: 18px;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--gray-light);
+  border-radius: var(--radius-md);
+  color: var(--gray-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+.btn-remove-combo:hover {
+  background: #fef2f2;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.btn-add-combo {
+  width: 100%;
+  padding: 10px;
+  background: var(--green-bg);
+  border: 1px dashed var(--green-light);
+  border-radius: var(--radius-lg);
+  color: var(--green-dark);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.btn-add-combo:hover {
+  background: rgba(51,178,87,0.25);
+  border-color: var(--green);
+}
+
+/* ── DoE Method ── */
+.method-option {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.method-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+.method-label:hover { background: var(--green-bg); }
+.method-label input[type="radio"] {
+  accent-color: var(--green);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.method-extra {
+  padding: 10px 12px 12px 2.4rem;
+  background: var(--gray-bg);
+  border-top: 1px solid var(--gray-border);
+}
+.method-extra.hidden { display: none; }
+
+.method-param-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.method-param-row label {
+  font-size: 0.78rem;
+  color: var(--gray-muted);
+  font-weight: 500;
+  flex: 1;
+}
+
+.param-input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  font-size: 0.8rem;
+  font-family: var(--font);
+  background: #ffffff;
+  color: var(--gray);
+  outline: none;
+  transition: var(--transition);
+}
+.param-input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
+
+.taguchi-array-badge {
+  margin: 6px 0 8px;
+  font-size: 0.78rem;
+  color: var(--gray-muted);
+}
+.taguchi-array-badge strong { color: var(--green); }
+
+.method-extra-hint {
+  font-size: 0.75rem;
+  color: var(--gray-muted);
+}
+
+/* ── Validation ── */
+.validation-errors { margin: 4px 0; }
+.validation-errors:empty { display: none; }
+.error-list {
+  margin: 0;
+  padding: 10px 12px 10px 26px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid var(--red);
+  border-radius: var(--radius-lg);
+  color: var(--red);
+  font-size: 0.78rem;
+}
+.error-list li { margin-bottom: 4px; }
+.error-list li:last-child { margin-bottom: 0; }
+.warning-list {
+  margin: 0;
+  padding: 10px 12px 10px 26px;
+  background: #fff3e0;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid var(--orange);
+  border-radius: var(--radius-lg);
+  color: #e65100;
+  font-size: 0.78rem;
+}
+
+/* ── Buttons ── */
+.generate-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-primary {
+  flex: 1;
+  padding: 10px 18px;
+  background: var(--green);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--green-dark); }
+.btn-primary:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--green);
+}
+
+.btn-secondary {
+  padding: 9px 14px;
+  background: #ffffff;
+  color: var(--gray-muted);
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.btn-secondary:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+.btn-secondary:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--green);
+}
+
+.results-summary {
+  font-size: 0.8rem;
+  color: var(--gray-muted);
+  margin-top: 6px;
+}
+
+/* ── Right Pane ── */
+.plot-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+#results {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+#results.hidden { display: none; }
+
+.plot-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #fafafa;
+  min-height: 0;
+}
+
+.plot-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--gray-muted);
+  margin-bottom: 10px;
+  margin-top: 4px;
+}
+.plot-section-title:not(:first-child) { margin-top: 16px; }
+
+.plot-cell {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.plot-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--gray-border);
+  background: var(--gray-100);
+  flex-wrap: wrap;
+}
+
+.axis-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gray-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.plot-axis-sel {
+  padding: 4px 22px 4px 8px;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-family: var(--font);
+  color: var(--gray);
+  background: #ffffff;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  outline: none;
+  transition: var(--transition);
+}
+.plot-axis-sel:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
+
+.plot-div-3d { height: 560px; }
+
+.parcoords-cell {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+.plot-parcoords { height: 420px; }
+
+/* ── Stats card above 3D plot ── */
+.plot-summary {
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  background: #ffffff;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+}
+.summary-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding-right: 24px;
+  border-right: 1px solid var(--gray-border);
+  min-width: 0;
+}
+.summary-stat:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+.summary-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray-muted);
+}
+.summary-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--gray);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.summary-value-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding-top: 6px;
+}
+.summary-stat.accent-green .summary-value { color: var(--green); }
+
+/* ── DoE conditions table ── */
+.table-cell {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-xl);
+  overflow: auto;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  max-height: 480px;
+}
+#doe-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+#doe-table thead th {
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray-muted);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--gray-border);
+  white-space: nowrap;
+  z-index: 1;
+}
+#doe-table tbody td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  color: var(--gray);
+  white-space: nowrap;
+}
+#doe-table tbody tr:hover td { background: var(--green-bg); }
+#doe-table tbody td:first-child { text-align: center; font-weight: 600; }
+
+/* ── Empty state ── */
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--gray-subtle);
+  font-size: 0.9rem;
+  padding: 40px;
+  text-align: center;
+}
+.empty-state svg { opacity: 0.3; }
+.empty-state .hint {
+  font-size: 0.8rem;
+  color: var(--gray-subtle);
+  max-width: 320px;
+}
+
+/* Hide empty state once results are shown */
+.plot-area:has(#results:not(.hidden)) #emptyState { display: none; }
+
+.hidden { display: none !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray-light); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-subtle); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  body { height: auto; overflow: auto; }
+  .main { flex-direction: column; overflow: visible; }
+  .panel {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-border);
+    overflow-y: visible;
+    max-height: none;
+  }
+  .plot-area { overflow: visible; }
+  #results { overflow: visible; }
+  .plot-scroll { overflow: visible; }
+  .plot-div-3d { height: 420px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="accent">Degradation</span> DoE Designer</h1>
+  <span class="subtitle">Design of Experiments for battery ageing studies</span>
+</div>
+
+<div class="main">
+
+  <!-- ═══════════════════════════════════════════════════════
+       LEFT PANEL — Factor Inputs, DoE Method, Generate
+  ═══════════════════════════════════════════════════════ -->
+  <div class="panel">
+
+    <!-- PARAMETERS -->
+    <div>
+      <div class="section-title">Parameters</div>
+
+      <!-- Input mode toggle -->
+      <div class="mode-toggle" role="tablist" aria-label="Input mode">
+        <button type="button" class="mode-btn active" data-mode="values" role="tab">Exact values</button>
+        <button type="button" class="mode-btn" data-mode="counts" role="tab">Level counts</button>
+      </div>
+
+      <!-- ── Exact values mode ── -->
+      <div id="mode-values">
+        <p class="section-hint">
+          Enter comma-separated values for each factor (e.g. <code>5, 10, 25, 45</code>).
+        </p>
+
+        <!-- Temperature -->
+        <div class="factor-card">
+          <label class="factor-label" for="input-temperature">Temperature</label>
+          <div class="factor-input-wrap">
+            <input
+              type="text"
+              id="input-temperature"
+              class="factor-input"
+              placeholder="e.g. 5, 10, 25, 45"
+              aria-describedby="temperature-hint"
+            />
+            <span class="unit-label">°C</span>
+          </div>
+          <p class="field-hint" id="temperature-hint">Valid range: −20 to 80 °C</p>
+        </div>
+
+        <!-- Charge Load -->
+        <div class="factor-card">
+          <label class="factor-label" for="input-charge">Charge Load</label>
+          <div class="factor-input-wrap">
+            <input
+              type="text"
+              id="input-charge"
+              class="factor-input"
+              placeholder="e.g. 1, 3, 5, 10"
+            />
+            <select id="select-charge-unit" class="unit-select" aria-label="Charge load unit">
+              <option value="A">A</option>
+              <option value="C">C-rate</option>
+              <option value="W">W</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Discharge Load -->
+        <div class="factor-card">
+          <label class="factor-label" for="input-discharge">Discharge Load</label>
+          <div class="factor-input-wrap">
+            <input
+              type="text"
+              id="input-discharge"
+              class="factor-input"
+              placeholder="e.g. 3, 4, 5"
+            />
+            <select id="select-discharge-unit" class="unit-select" aria-label="Discharge load unit">
+              <option value="A">A</option>
+              <option value="C">C-rate</option>
+              <option value="W">W</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Termination Combinations -->
+        <div class="factor-card">
+          <label class="factor-label">Termination Combinations</label>
+          <p class="field-hint" style="margin-top:0;margin-bottom:8px;">
+            Each row is one level in the DoE — a fixed pair of discharge (D) and charge (C) conditions.
+          </p>
+          <div class="term-combo-wrap">
+            <div class="term-combo-header">
+              <span class="term-combo-idx-col">#</span>
+              <span class="term-combo-side-label">Discharge Termination</span>
+              <span class="term-combo-side-label">Charge Termination</span>
+              <span></span>
+            </div>
+            <div id="term-combo-list"></div>
+          </div>
+          <button type="button" id="btn-add-combo" class="btn-add-combo">+ Add Combination</button>
+        </div>
+      </div>
+
+      <!-- ── Level-counts mode ── -->
+      <div id="mode-counts" class="hidden">
+        <p class="section-hint">
+          Specify the number of levels per factor. Values are just <code>1, 2, 3, …, N</code>
+          — use this to gauge how many cells a given design size needs before committing to real values.
+        </p>
+
+        <div class="factor-card">
+          <label class="factor-label" for="input-temp-count">Temperature levels</label>
+          <div class="factor-input-wrap">
+            <input type="number" id="input-temp-count" class="factor-input"
+                   value="3" min="1" step="1" style="font-family: var(--font);" />
+            <span class="unit-label">levels</span>
+          </div>
+        </div>
+
+        <div class="factor-card">
+          <label class="factor-label" for="input-charge-count">Charge load levels</label>
+          <div class="factor-input-wrap">
+            <input type="number" id="input-charge-count" class="factor-input"
+                   value="3" min="1" step="1" style="font-family: var(--font);" />
+            <span class="unit-label">levels</span>
+          </div>
+        </div>
+
+        <div class="factor-card">
+          <label class="factor-label" for="input-discharge-count">Discharge load levels</label>
+          <div class="factor-input-wrap">
+            <input type="number" id="input-discharge-count" class="factor-input"
+                   value="3" min="1" step="1" style="font-family: var(--font);" />
+            <span class="unit-label">levels</span>
+          </div>
+        </div>
+
+        <div class="factor-card">
+          <label class="factor-label" for="input-term-count">Termination levels</label>
+          <div class="factor-input-wrap">
+            <input type="number" id="input-term-count" class="factor-input"
+                   value="2" min="1" step="1" style="font-family: var(--font);" />
+            <span class="unit-label">levels</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOE METHOD -->
+    <div>
+      <div class="section-title">DoE Method</div>
+
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-fullFactorial" value="fullFactorial" checked />
+          Full Factorial
+        </label>
+        <div class="method-extra" id="extra-fullFactorial">
+          <p class="method-extra-hint">
+            Generates all combinations of your factor values. Total runs = product of all list lengths.
+          </p>
+        </div>
+      </div>
+
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-lhs" value="lhs" />
+          Latin Hypercube Sampling
+        </label>
+        <div class="method-extra hidden" id="extra-lhs">
+          <div class="method-param-row">
+            <label for="input-lhs-samples">Number of samples</label>
+            <input type="number" id="input-lhs-samples" class="param-input" value="20" min="2" step="1" />
+          </div>
+          <p class="method-extra-hint">
+            Samples are drawn to cover the factor value space evenly without testing all combinations.
+          </p>
+        </div>
+      </div>
+
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-taguchi" value="taguchi" />
+          Taguchi Orthogonal Array
+        </label>
+        <div class="method-extra hidden" id="extra-taguchi">
+          <div class="method-param-row">
+            <label for="input-taguchi-levels">Levels per factor</label>
+            <input type="number" id="input-taguchi-levels" class="param-input" value="2" min="2" max="5" step="1" />
+          </div>
+          <p class="taguchi-array-badge">
+            Auto-selected array: <strong id="taguchi-array-name">L8</strong>
+            &nbsp;·&nbsp; <span id="taguchi-array-hint" style="font-weight:normal">L8: 8 runs</span>
+          </p>
+          <p class="method-extra-hint">
+            Supported levels: 2 → L8, 3 → L9, 4 → L16, 5 → L25. Uses the first N values from each list.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXPERIMENT -->
+    <div>
+      <div class="section-title">Experiment</div>
+      <div class="factor-card">
+        <label class="factor-label" for="input-repeats">Repeats per condition</label>
+        <div class="factor-input-wrap">
+          <input
+            type="number"
+            id="input-repeats"
+            class="factor-input"
+            value="1"
+            min="1"
+            step="1"
+            style="font-family: var(--font);"
+          />
+          <span class="unit-label">×</span>
+        </div>
+        <p class="field-hint">Total cells = number of runs × repeats</p>
+      </div>
+    </div>
+
+    <!-- VALIDATION -->
+    <div id="validation-errors" class="validation-errors" aria-live="polite"></div>
+
+    <!-- GENERATE -->
+    <div>
+      <div class="generate-section">
+        <button id="btn-generate" class="btn-primary">Generate DoE</button>
+        <button id="btn-download-csv" class="btn-secondary">Download CSV</button>
+      </div>
+      <p id="results-summary" class="results-summary"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       RIGHT PANE — Plots (top) and DoE table (bottom)
+  ═══════════════════════════════════════════════════════ -->
+  <div class="plot-area">
+
+    <!-- Empty state (shown until first generate) -->
+    <div class="empty-state" id="emptyState">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 12l2 2 4-4" />
+      </svg>
+      <div>Define factors and generate a design</div>
+      <div class="hint">Fill in the parameters on the left, choose a DoE method, then press <strong>Generate DoE</strong>.</div>
+    </div>
+
+    <!-- Results: plots + table -->
+    <div id="results" class="hidden">
+
+      <div class="plot-scroll">
+
+        <div class="plot-summary">
+          <div class="summary-stat">
+            <span class="summary-label">Runs</span>
+            <span class="summary-value" id="stat-runs">—</span>
+          </div>
+          <div class="summary-stat">
+            <span class="summary-label">Repeats</span>
+            <span class="summary-value" id="stat-repeats">—</span>
+          </div>
+          <div class="summary-stat accent-green">
+            <span class="summary-label">Total cells</span>
+            <span class="summary-value" id="stat-cells">—</span>
+          </div>
+          <div class="summary-stat">
+            <span class="summary-label">Method</span>
+            <span class="summary-value summary-value-text" id="stat-method">—</span>
+          </div>
+        </div>
+
+        <div class="plot-section-title">3D Scatter</div>
+        <div class="plot-cell">
+          <div class="plot-controls">
+            <label class="axis-label">X: <select id="plot3d-x" class="plot-axis-sel"></select></label>
+            <label class="axis-label">Y: <select id="plot3d-y" class="plot-axis-sel"></select></label>
+            <label class="axis-label">Z: <select id="plot3d-z" class="plot-axis-sel"></select></label>
+          </div>
+          <div id="plot-3d" class="plot-div-3d"></div>
+        </div>
+
+        <div class="plot-section-title">Parallel Coordinates</div>
+        <div class="parcoords-cell">
+          <div id="plot-parcoords" class="plot-parcoords"></div>
+        </div>
+
+        <div class="plot-section-title">DoE Conditions</div>
+        <div class="table-cell">
+          <table id="doe-table">
+            <thead id="doe-thead"></thead>
+            <tbody id="doe-tbody"></tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

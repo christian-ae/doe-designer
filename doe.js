@@ -6,12 +6,16 @@ const TEMP_MAX_ABSOLUTE = 80;
 
 const TERMINATION_UNITS = {
   'Voltage':          'V',
-  'Time':             'h',
+  'Time':             's',
   'Energy Capacity':  'Wh',
   'Charge Capacity':  'Ah',
+  'SOCmin':           '%',
+  'SOCmax':           '%',
 };
 
-const TERMINATION_TYPES = Object.keys(TERMINATION_UNITS);
+// SOCmin is only meaningful on the discharge side; SOCmax only on the charge side.
+const DISCHARGE_TERM_TYPES = ['Voltage', 'Time', 'Energy Capacity', 'Charge Capacity', 'SOCmin'];
+const CHARGE_TERM_TYPES    = ['Voltage', 'Time', 'Energy Capacity', 'Charge Capacity', 'SOCmax'];
 
 // Taguchi orthogonal arrays keyed by number of levels.
 // Each entry: { name, array }  — array uses 1-indexed coded levels.
@@ -119,7 +123,9 @@ const state = {
     samples:       20,
     taguchiLevels: 2,
   },
-  results: null,
+  repeats:   1,
+  inputMode: 'values', // 'values' | 'counts'
+  results:   null,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -187,13 +193,23 @@ function addComboRow(combo) {
   idx.className = 'combo-index';
   idx.textContent = list.children.length + 1;
 
-  const makeCell = (typeVal, numVal) => {
+  const makeCell = (sideLabelText, typeVal, numVal, typesList) => {
     const cell = document.createElement('div');
     cell.className = 'term-combo-cell';
 
+    // Side label row (above the type selector)
+    const sideLabel = document.createElement('span');
+    sideLabel.className = 'combo-side-label';
+    sideLabel.textContent = sideLabelText;
+    cell.appendChild(sideLabel);
+
+    // Inputs row: [type select] [value] [unit]
+    const inputsRow = document.createElement('div');
+    inputsRow.className = 'term-combo-cell-inputs';
+
     const sel = document.createElement('select');
     sel.className = 'unit-select combo-type-sel';
-    TERMINATION_TYPES.forEach(t => {
+    typesList.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t;
       opt.textContent = t;
@@ -216,9 +232,10 @@ function addComboRow(combo) {
       unit.textContent = TERMINATION_UNITS[sel.value];
     });
 
-    cell.appendChild(sel);
-    cell.appendChild(inp);
-    cell.appendChild(unit);
+    inputsRow.appendChild(sel);
+    inputsRow.appendChild(inp);
+    inputsRow.appendChild(unit);
+    cell.appendChild(inputsRow);
     return cell;
   };
 
@@ -233,8 +250,8 @@ function addComboRow(combo) {
   });
 
   row.appendChild(idx);
-  row.appendChild(makeCell(combo.dischargeType, combo.dischargeValue));
-  row.appendChild(makeCell(combo.chargeType,    combo.chargeValue));
+  row.appendChild(makeCell('Discharge', combo.dischargeType, combo.dischargeValue, DISCHARGE_TERM_TYPES));
+  row.appendChild(makeCell('Charge',    combo.chargeType,    combo.chargeValue,    CHARGE_TERM_TYPES));
   row.appendChild(removeBtn);
 
   list.appendChild(row);
@@ -360,41 +377,59 @@ function validateInputs() {
   const errors = [];
   const warnings = [];
   const f = state.factors;
+  const isCounts = state.inputMode === 'counts';
 
-  // Temperature
-  if (f.temperature.values.length === 0) {
-    errors.push('Temperature: please enter at least one value.');
+  if (isCounts) {
+    const countChecks = [
+      ['Temperature levels',   f.temperature.values.length],
+      ['Charge load levels',   f.chargeLoad.values.length],
+      ['Discharge load levels', f.dischargeLoad.values.length],
+      ['Termination levels',   f.termination.combinations.length],
+    ];
+    countChecks.forEach(([name, n]) => {
+      if (n < 1) errors.push(`${name}: must be at least 1.`);
+    });
   } else {
-    const outOfRange = f.temperature.values.filter(
-      v => v < TEMP_MIN_ABSOLUTE || v > TEMP_MAX_ABSOLUTE
-    );
-    if (outOfRange.length > 0) {
-      errors.push(
-        `Temperature: values ${outOfRange.join(', ')} °C are outside the allowed range [${TEMP_MIN_ABSOLUTE}, ${TEMP_MAX_ABSOLUTE}] °C.`
+    // Temperature
+    if (f.temperature.values.length === 0) {
+      errors.push('Temperature: please enter at least one value.');
+    } else {
+      const outOfRange = f.temperature.values.filter(
+        v => v < TEMP_MIN_ABSOLUTE || v > TEMP_MAX_ABSOLUTE
       );
+      if (outOfRange.length > 0) {
+        errors.push(
+          `Temperature: values ${outOfRange.join(', ')} °C are outside the allowed range [${TEMP_MIN_ABSOLUTE}, ${TEMP_MAX_ABSOLUTE}] °C.`
+        );
+      }
+    }
+
+    if (f.chargeLoad.values.length === 0) {
+      errors.push('Charge Load: please enter at least one value.');
+    }
+
+    if (f.dischargeLoad.values.length === 0) {
+      errors.push('Discharge Load: please enter at least one value.');
+    }
+
+    // Termination combinations
+    if (f.termination.combinations.length === 0) {
+      errors.push('Termination Combinations: please add at least one combination.');
+    } else {
+      f.termination.combinations.forEach((c, i) => {
+        if (isNaN(c.dischargeValue)) {
+          errors.push(`Termination Combination ${i + 1}: discharge value is missing or invalid.`);
+        }
+        if (isNaN(c.chargeValue)) {
+          errors.push(`Termination Combination ${i + 1}: charge value is missing or invalid.`);
+        }
+      });
     }
   }
 
-  if (f.chargeLoad.values.length === 0) {
-    errors.push('Charge Load: please enter at least one value.');
-  }
-
-  if (f.dischargeLoad.values.length === 0) {
-    errors.push('Discharge Load: please enter at least one value.');
-  }
-
-  // Termination combinations
-  if (f.termination.combinations.length === 0) {
-    errors.push('Termination Combinations: please add at least one combination.');
-  } else {
-    f.termination.combinations.forEach((c, i) => {
-      if (isNaN(c.dischargeValue)) {
-        errors.push(`Termination Combination ${i + 1}: discharge value is missing or invalid.`);
-      }
-      if (isNaN(c.chargeValue)) {
-        errors.push(`Termination Combination ${i + 1}: charge value is missing or invalid.`);
-      }
-    });
+  // Repeats
+  if (!Number.isInteger(state.repeats) || state.repeats < 1) {
+    errors.push('Repeats per condition: must be an integer ≥ 1.');
   }
 
   // Method-specific
@@ -501,13 +536,7 @@ function validateAndGenerate() {
 
   document.getElementById('results').classList.remove('hidden');
 
-  const methodLabels = {
-    fullFactorial: 'Full Factorial',
-    lhs:           'Latin Hypercube Sampling',
-    taguchi:       `Taguchi ${state.methodParams.taguchiLevels}-level (${taguchiArrayName(state.methodParams.taguchiLevels)})`,
-  };
-  document.getElementById('results-summary').textContent =
-    `${runs.length} run${runs.length !== 1 ? 's' : ''} · ${methodLabels[state.method]}`;
+  updateExperimentDisplays();
 
   renderTable(runs);
   renderPlots(runs);
@@ -516,23 +545,91 @@ function validateAndGenerate() {
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// ── Experiment stats display ───────────────────────────────────────────────
+
+/**
+ * Update both the left-panel summary line and the stats card above the 3D
+ * plot. Called on generate and whenever the repeats input changes.
+ */
+function updateExperimentDisplays() {
+  const statRuns       = document.getElementById('stat-runs');
+  const statRepeats    = document.getElementById('stat-repeats');
+  const statCells      = document.getElementById('stat-cells');
+  const statMethod     = document.getElementById('stat-method');
+  const resultsSummary = document.getElementById('results-summary');
+
+  if (!state.results) {
+    [statRuns, statRepeats, statCells, statMethod].forEach(el => {
+      if (el) el.textContent = '—';
+    });
+    if (resultsSummary) resultsSummary.textContent = '';
+    return;
+  }
+
+  const nRuns  = state.results.length;
+  const nCells = nRuns * state.repeats;
+
+  const methodShort = {
+    fullFactorial: 'Full Factorial',
+    lhs:           'Latin Hypercube',
+    taguchi:       `Taguchi L${state.methodParams.taguchiLevels}`,
+  };
+  const methodLong = {
+    fullFactorial: 'Full Factorial',
+    lhs:           'Latin Hypercube Sampling',
+    taguchi:       `Taguchi ${state.methodParams.taguchiLevels}-level (${taguchiArrayName(state.methodParams.taguchiLevels)})`,
+  };
+
+  if (statRuns)    statRuns.textContent    = nRuns;
+  if (statRepeats) statRepeats.textContent = state.repeats;
+  if (statCells)   statCells.textContent   = nCells;
+  if (statMethod)  statMethod.textContent  = methodShort[state.method];
+
+  if (resultsSummary) {
+    resultsSummary.textContent =
+      `${nRuns} run${nRuns !== 1 ? 's' : ''} · ${nCells} cell${nCells !== 1 ? 's' : ''} · ${methodLong[state.method]}`;
+  }
+}
+
 // ── Table rendering ────────────────────────────────────────────────────────
 
 function renderTable(runs) {
-  const f = state.factors;
-  const chargeUnit = f.chargeLoad.unit;
-  const dischUnit  = f.dischargeLoad.unit;
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
 
-  const headers = [
-    'Run',
-    'Temperature (°C)',
-    `Charge Load (${chargeUnit})`,
-    `Discharge Load (${dischUnit})`,
-    'Disch. Term. Type',
-    'Disch. Term. Value',
-    'Chg. Term. Type',
-    'Chg. Term. Value',
-  ];
+  let headers, getCells;
+
+  if (isCounts) {
+    headers = ['Run', 'Temperature', 'Charge Load', 'Discharge Load', 'Termination'];
+    getCells = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex];
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    headers = [
+      'Run',
+      'Temperature (°C)',
+      `Charge Load (${chargeUnit})`,
+      `Discharge Load (${dischUnit})`,
+      'Disch. Term. Type',
+      'Disch. Term. Value',
+      'Chg. Term. Type',
+      'Chg. Term. Value',
+    ];
+    getCells = r => {
+      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
+      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
+      return [
+        r.run,
+        fmt(r.temperature),
+        fmt(r.chargeLoad),
+        fmt(r.dischargeLoad),
+        r.termCombo.dischargeType,
+        `${fmt(r.termCombo.dischargeValue)} ${du}`,
+        r.termCombo.chargeType,
+        `${fmt(r.termCombo.chargeValue)} ${cu}`,
+      ];
+    };
+  }
 
   const thead = document.getElementById('doe-thead');
   const tbody = document.getElementById('doe-tbody');
@@ -549,21 +646,7 @@ function renderTable(runs) {
 
   runs.forEach(r => {
     const row = document.createElement('tr');
-    const du = TERMINATION_UNITS[r.termCombo.dischargeType];
-    const cu = TERMINATION_UNITS[r.termCombo.chargeType];
-
-    const cells = [
-      r.run,
-      fmt(r.temperature),
-      fmt(r.chargeLoad),
-      fmt(r.dischargeLoad),
-      r.termCombo.dischargeType,
-      `${fmt(r.termCombo.dischargeValue)} ${du}`,
-      r.termCombo.chargeType,
-      `${fmt(r.termCombo.chargeValue)} ${cu}`,
-    ];
-
-    cells.forEach((v, i) => {
+    getCells(r).forEach((v, i) => {
       const td = document.createElement('td');
       td.textContent = v;
       if (i === 0) td.style.textAlign = 'center';
@@ -577,6 +660,14 @@ function renderTable(runs) {
 
 /** Returns the list of plottable variables with current unit labels. */
 function getVarOptions() {
+  if (state.inputMode === 'counts') {
+    return [
+      { key: 'temperature',    label: 'Temperature level' },
+      { key: 'chargeLoad',     label: 'Charge load level' },
+      { key: 'dischargeLoad',  label: 'Discharge load level' },
+      { key: 'termComboIndex', label: 'Termination level' },
+    ];
+  }
   const chargeUnit = state.factors.chargeLoad.unit;
   const dischUnit  = state.factors.dischargeLoad.unit;
   return [
@@ -587,44 +678,57 @@ function getVarOptions() {
   ];
 }
 
-const PLOT_CONFIGS = [
-  { plotId: 'plot-temp-charge',      xId: 'plot1-x', yId: 'plot1-y', defaultX: 'temperature',   defaultY: 'chargeLoad'     },
-  { plotId: 'plot-temp-discharge',   xId: 'plot2-x', yId: 'plot2-y', defaultX: 'temperature',   defaultY: 'dischargeLoad'  },
-  { plotId: 'plot-discharge-charge', xId: 'plot3-x', yId: 'plot3-y', defaultX: 'dischargeLoad', defaultY: 'chargeLoad'     },
-  { plotId: 'plot-temp-term',        xId: 'plot4-x', yId: 'plot4-y', defaultX: 'temperature',   defaultY: 'termComboIndex' },
-];
+const PLOT3D_CONFIG = {
+  plotId:   'plot-3d',
+  xSelId:   'plot3d-x',
+  ySelId:   'plot3d-y',
+  zSelId:   'plot3d-z',
+  defaultX: 'temperature',
+  defaultY: 'chargeLoad',
+  defaultZ: 'dischargeLoad',
+};
 
-function renderSinglePlot(plotId, xSelId, ySelId, runs) {
-  const xKey    = document.getElementById(xSelId).value;
-  const yKey    = document.getElementById(ySelId).value;
-  const f       = state.factors;
-  const vars    = getVarOptions();
-  const xVar    = vars.find(v => v.key === xKey);
-  const yVar    = vars.find(v => v.key === yKey);
+function render3DPlot(runs) {
+  const { plotId, xSelId, ySelId, zSelId } = PLOT3D_CONFIG;
+  const xKey = document.getElementById(xSelId).value;
+  const yKey = document.getElementById(ySelId).value;
+  const zKey = document.getElementById(zSelId).value;
 
-  const getVal  = (r, key) => key === 'termComboIndex' ? r.termComboIndex : r[key];
-  const xVals   = runs.map(r => getVal(r, xKey));
-  const yVals   = runs.map(r => getVal(r, yKey));
+  const f    = state.factors;
+  const vars = getVarOptions();
+  const xVar = vars.find(v => v.key === xKey);
+  const yVar = vars.find(v => v.key === yKey);
+  const zVar = vars.find(v => v.key === zKey);
+
+  const getVal = (r, key) => key === 'termComboIndex' ? r.termComboIndex : r[key];
+  const xVals  = runs.map(r => getVal(r, xKey));
+  const yVals  = runs.map(r => getVal(r, yKey));
+  const zVals  = runs.map(r => getVal(r, zKey));
+
+  const isCounts = state.inputMode === 'counts';
 
   // Build per-point hover text with combo labels resolved
   const getDisplayVal = (r, key, numVal) => {
     if (key !== 'termComboIndex') return numVal;
+    if (isCounts) return `Level ${r.termComboIndex}`;
     const combo = f.termination.combinations[r.termComboIndex - 1];
     return combo ? comboLabel(combo) : `Combo ${r.termComboIndex}`;
   };
   const hoverTexts = runs.map((r, i) =>
     `${xVar.label}: <b>${getDisplayVal(r, xKey, xVals[i])}</b><br>` +
     `${yVar.label}: <b>${getDisplayVal(r, yKey, yVals[i])}</b><br>` +
+    `${zVar.label}: <b>${getDisplayVal(r, zKey, zVals[i])}</b><br>` +
     `<i>Run ${r.run}</i>`
   );
 
-  // Build axis layout, adding tick labels for termination combo axis
+  // Per-axis layout — combo axis gets categorical tick labels
   const makeAxisLayout = (key, label) => {
-    const base = { title: { text: label, font: { size: 12 } }, automargin: true };
+    const base = { title: { text: label, font: { size: 12 } } };
     if (key !== 'termComboIndex') return base;
-    const vals       = runs.map(r => r.termComboIndex);
-    const uniqueIdx  = [...new Set(vals)].sort((a, b) => a - b);
-    const ticktext   = uniqueIdx.map(idx => {
+    const vals      = runs.map(r => r.termComboIndex);
+    const uniqueIdx = [...new Set(vals)].sort((a, b) => a - b);
+    const ticktext  = uniqueIdx.map(idx => {
+      if (isCounts) return `Level ${idx}`;
       const combo = f.termination.combinations[idx - 1];
       return combo ? comboLabel(combo) : `Combo ${idx}`;
     });
@@ -632,107 +736,99 @@ function renderSinglePlot(plotId, xSelId, ySelId, runs) {
   };
 
   const trace = {
+    type:          'scatter3d',
+    mode:          'markers',
     x:             xVals,
     y:             yVals,
-    mode:          'markers',
-    type:          'scatter',
+    z:             zVals,
     text:          hoverTexts,
     hovertemplate: '%{text}<extra></extra>',
-    marker:        { size: 8, color: '#33b257', opacity: 0.75, line: { width: 1, color: '#1e6632' } },
+    marker: {
+      size:    5,
+      color:   '#33b257',
+      opacity: 0.85,
+      line:    { width: 0.5, color: '#1e6632' },
+    },
   };
 
   const layout = {
-    xaxis:         makeAxisLayout(xKey, xVar.label),
-    yaxis:         makeAxisLayout(yKey, yVar.label),
-    margin:        { t: 16, r: 16, b: 50, l: 60 },
+    scene: {
+      xaxis:  makeAxisLayout(xKey, xVar.label),
+      yaxis:  makeAxisLayout(yKey, yVar.label),
+      zaxis:  makeAxisLayout(zKey, zVar.label),
+      camera: { eye: { x: 1.6, y: 1.6, z: 1.2 } },
+    },
+    margin:        { t: 10, r: 10, b: 10, l: 10 },
     autosize:      true,
     paper_bgcolor: '#ffffff',
-    plot_bgcolor:  '#f8fafc',
+    font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
   };
 
-  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: false });
+  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
 }
 
 function renderPlots(runs) {
   const varOptions = getVarOptions();
+  const { xSelId, ySelId, zSelId, defaultX, defaultY, defaultZ } = PLOT3D_CONFIG;
 
-  PLOT_CONFIGS.forEach(({ plotId, xId, yId, defaultX, defaultY }) => {
-    const xSel = document.getElementById(xId);
-    const ySel = document.getElementById(yId);
+  [[xSelId, defaultX], [ySelId, defaultY], [zSelId, defaultZ]].forEach(([selId, def]) => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
 
     // Preserve current selection before repopulating (empty string on first call)
-    const prevX = xSel.value;
-    const prevY = ySel.value;
-
-    xSel.innerHTML = '';
-    ySel.innerHTML = '';
+    const prev = sel.value;
+    sel.innerHTML = '';
     varOptions.forEach(v => {
-      const ox = document.createElement('option');
-      ox.value = v.key; ox.textContent = v.label;
-      xSel.appendChild(ox);
-      const oy = document.createElement('option');
-      oy.value = v.key; oy.textContent = v.label;
-      ySel.appendChild(oy);
+      const opt = document.createElement('option');
+      opt.value       = v.key;
+      opt.textContent = v.label;
+      sel.appendChild(opt);
     });
-
-    // Use previous selection if still valid, otherwise fall back to default
-    xSel.value = varOptions.some(v => v.key === prevX) ? prevX : defaultX;
-    ySel.value = varOptions.some(v => v.key === prevY) ? prevY : defaultY;
-
-    renderSinglePlot(plotId, xId, yId, runs);
+    sel.value = varOptions.some(v => v.key === prev) ? prev : def;
   });
+
+  render3DPlot(runs);
 }
 
 // ── Parallel coordinates plot ──────────────────────────────────────────────
 
 function renderParCoords(runs) {
-  const f = state.factors;
-  const chargeUnit = f.chargeLoad.unit;
-  const dischUnit  = f.dischargeLoad.unit;
-
-  // Build combo tick maps for the termination axis
-  const combos       = f.termination.combinations;
-  const comboIndices = runs.map(r => r.termComboIndex);
-  const uniqueIdx    = [...new Set(comboIndices)].sort((a, b) => a - b);
-  const tickvals     = uniqueIdx;
-  const ticktext     = uniqueIdx.map(i => {
-    const c = combos[i - 1];
-    return c ? comboLabel(c) : `Combo ${i}`;
-  });
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
 
   // Colour lines by run number for easy visual separation
   const runNums = runs.map(r => r.run);
   const nRuns   = runs.length;
 
-  const dimensions = [
-    {
-      label:  'Temperature (°C)',
-      values: runs.map(r => r.temperature),
-    },
-    {
-      label:  `Charge Load (${chargeUnit})`,
-      values: runs.map(r => r.chargeLoad),
-    },
-    {
-      label:  `Discharge Load (${dischUnit})`,
-      values: runs.map(r => r.dischargeLoad),
-    },
-    {
-      label:          'Disch. Term. Value',
-      values:         runs.map(r => r.termCombo.dischargeValue),
-      // Show the discharge unit in a note via the axis label suffix where values differ
-    },
-    {
-      label:          'Chg. Term. Value',
-      values:         runs.map(r => r.termCombo.chargeValue),
-    },
-    {
-      label:    'Term. Combo',
-      values:   comboIndices,
-      tickvals,
-      ticktext,
-    },
-  ];
+  let dimensions;
+
+  if (isCounts) {
+    dimensions = [
+      { label: 'Temperature',    values: runs.map(r => r.temperature)    },
+      { label: 'Charge Load',    values: runs.map(r => r.chargeLoad)     },
+      { label: 'Discharge Load', values: runs.map(r => r.dischargeLoad)  },
+      { label: 'Termination',    values: runs.map(r => r.termComboIndex) },
+    ];
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+
+    // Build combo tick maps for the termination axis
+    const combos       = f.termination.combinations;
+    const comboIndices = runs.map(r => r.termComboIndex);
+    const uniqueIdx    = [...new Set(comboIndices)].sort((a, b) => a - b);
+    const ticktext     = uniqueIdx.map(i => {
+      const c = combos[i - 1];
+      return c ? comboLabel(c) : `Combo ${i}`;
+    });
+
+    dimensions = [
+      { label: 'Temperature (°C)',              values: runs.map(r => r.temperature)    },
+      { label: `Charge Load (${chargeUnit})`,   values: runs.map(r => r.chargeLoad)     },
+      { label: `Discharge Load (${dischUnit})`, values: runs.map(r => r.dischargeLoad)  },
+      { label: 'Term. Combo',                   values: comboIndices, tickvals: uniqueIdx, ticktext },
+    ];
+  }
 
   const trace = {
     type:       'parcoords',
@@ -765,36 +861,44 @@ function renderParCoords(runs) {
 
 function downloadCSV() {
   if (!state.results) return;
-  const f = state.factors;
-  const chargeUnit = f.chargeLoad.unit;
-  const dischUnit  = f.dischargeLoad.unit;
+  const f        = state.factors;
+  const isCounts = state.inputMode === 'counts';
 
-  const header = [
-    'Run',
-    'Temperature_degC',
-    `ChargeLoad_${chargeUnit}`,
-    `DischargeLoad_${dischUnit}`,
-    'DischargeTermType',
-    'DischargeTermValue',
-    'ChargeTermType',
-    'ChargeTermValue',
-  ].join(',');
+  let header, makeRow;
 
-  const rows = state.results.map(r => {
-    const du = TERMINATION_UNITS[r.termCombo.dischargeType];
-    const cu = TERMINATION_UNITS[r.termCombo.chargeType];
-    return [
-      r.run,
-      r.temperature,
-      r.chargeLoad,
-      r.dischargeLoad,
-      r.termCombo.dischargeType,
-      `${r.termCombo.dischargeValue} ${du}`,
-      r.termCombo.chargeType,
-      `${r.termCombo.chargeValue} ${cu}`,
+  if (isCounts) {
+    header  = ['Run', 'TemperatureLevel', 'ChargeLoadLevel', 'DischargeLoadLevel', 'TerminationLevel'].join(',');
+    makeRow = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex].join(',');
+  } else {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    header = [
+      'Run',
+      'Temperature_degC',
+      `ChargeLoad_${chargeUnit}`,
+      `DischargeLoad_${dischUnit}`,
+      'DischargeTermType',
+      'DischargeTermValue',
+      'ChargeTermType',
+      'ChargeTermValue',
     ].join(',');
-  });
+    makeRow = r => {
+      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
+      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
+      return [
+        r.run,
+        r.temperature,
+        r.chargeLoad,
+        r.dischargeLoad,
+        r.termCombo.dischargeType,
+        `${r.termCombo.dischargeValue} ${du}`,
+        r.termCombo.chargeType,
+        `${r.termCombo.chargeValue} ${cu}`,
+      ].join(',');
+    };
+  }
 
+  const rows = state.results.map(makeRow);
   const csv  = [header, ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
@@ -810,7 +914,39 @@ function downloadCSV() {
 
 // ── DOM synchronisation ────────────────────────────────────────────────────
 
+/**
+ * Counts-mode sync: each factor's values become [1..N] where N is a user-
+ * supplied count. Termination "combos" become N placeholder objects so the
+ * existing DoE generators / renderers work unchanged.
+ */
+function syncStateFromCountsDOM() {
+  const readCount = id => {
+    const raw = document.getElementById(id).value;
+    const v   = parseInt(raw, 10);
+    return Number.isInteger(v) && v >= 1 ? v : 0;
+  };
+  const seq = n => Array.from({ length: n }, (_, i) => i + 1);
+
+  const nTemp      = readCount('input-temp-count');
+  const nCharge    = readCount('input-charge-count');
+  const nDischarge = readCount('input-discharge-count');
+  const nTerm      = readCount('input-term-count');
+
+  state.factors.temperature.values   = seq(nTemp);
+  state.factors.chargeLoad.values    = seq(nCharge);
+  state.factors.dischargeLoad.values = seq(nDischarge);
+  state.factors.termination.combinations = seq(nTerm).map(i => ({
+    dischargeType:  'Voltage', dischargeValue: i,
+    chargeType:     'Voltage', chargeValue:    i,
+  }));
+}
+
 function syncStateFromDOM() {
+  if (state.inputMode === 'counts') {
+    syncStateFromCountsDOM();
+    return;
+  }
+
   const parseAndStore = (inputId, factorKey) => {
     const raw = document.getElementById(inputId).value;
     const result = parseValueList(raw);
@@ -838,6 +974,22 @@ function syncStateFromDOM() {
 // ── Initialisation ─────────────────────────────────────────────────────────
 
 function init() {
+  // Input-mode toggle (Exact values / Level counts)
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      if (mode !== 'values' && mode !== 'counts') return;
+      state.inputMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode)
+      );
+      const valuesPanel = document.getElementById('mode-values');
+      const countsPanel = document.getElementById('mode-counts');
+      if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
+      if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
+    });
+  });
+
   // Method radio buttons
   document.querySelectorAll('input[name="doe-method"]').forEach(radio => {
     radio.addEventListener('change', () => {
@@ -877,6 +1029,16 @@ function init() {
     state.factors.dischargeLoad.unit = e.target.value;
   });
 
+  // Repeats per condition
+  const repeatsEl = document.getElementById('input-repeats');
+  if (repeatsEl) {
+    repeatsEl.addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      state.repeats = Number.isInteger(v) && v >= 1 ? v : 1;
+      updateExperimentDisplays();
+    });
+  }
+
   // Add combination button
   document.getElementById('btn-add-combo').addEventListener('click', () => addComboRow());
 
@@ -895,11 +1057,13 @@ function init() {
     });
   });
 
-  // Plot axis selectors — re-render on change
-  PLOT_CONFIGS.forEach(({ plotId, xId, yId }) => {
-    const handler = () => { if (state.results) renderSinglePlot(plotId, xId, yId, state.results); };
-    document.getElementById(xId).addEventListener('change', handler);
-    document.getElementById(yId).addEventListener('change', handler);
+  // 3D plot axis selectors — re-render on change
+  [PLOT3D_CONFIG.xSelId, PLOT3D_CONFIG.ySelId, PLOT3D_CONFIG.zSelId].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (state.results) render3DPlot(state.results);
+    });
   });
 
   // Add one default combo row to start

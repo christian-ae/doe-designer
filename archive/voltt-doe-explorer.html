@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voltt DOE Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --green: #33b257;
+  --green-light: #7dda98;
+  --green-dark: #1e6632;
+  --green-bg: rgba(51, 178, 87, 0.15);
+  --blue: #58b8fe;
+  --blue-light: #b7dfff;
+  --blue-dark: #1a6eb5;
+  --blue-bg: rgba(88, 184, 254, 0.15);
+  --gray: #323232;
+  --gray-light: #dadada;
+  --gray-bg: #f5f5f5;
+  --gray-border: #e5e7eb;
+  --gray-button: #e5e7eb;
+  --gray-muted: #6b7280;
+  --gray-subtle: #9ca3af;
+  --red: #f0421c;
+  --orange: #ffa500;
+  --yellow: #ffc107;
+  --purple: #7d3c98;
+  --font: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 1px 4px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+  --transition: 150ms ease-in-out;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--font); background:var(--gray-bg); color:var(--gray); height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+
+/* ── Header ── */
+.header {
+  display:flex; align-items:center; gap:12px; padding:14px 20px;
+  border-bottom:1px solid var(--gray-border); background:#ffffff;
+}
+.header h1 { font-size:1.4rem; font-weight:700; color:var(--gray); }
+.header .voltt { color:var(--green); }
+.header .subtitle { font-size:0.8rem; color:var(--gray-muted); margin-left:auto; font-weight:500; }
+.main { display:flex; flex:1; overflow:hidden; }
+
+/* ── Left Panel ── */
+.panel {
+  width:350px; min-width:350px; overflow-y:auto; border-right:1px solid var(--gray-border);
+  background:#ffffff; padding:16px; display:flex; flex-direction:column; gap:16px;
+}
+.section-title {
+  font-size:0.8rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;
+  color:var(--gray-muted); margin-bottom:8px;
+}
+
+/* ── Parameter Cards ── */
+.param-card {
+  background:var(--gray-bg); border:1px solid var(--gray-border);
+  border-radius:var(--radius-xl); padding:12px 14px; margin-bottom:8px;
+}
+.param-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.param-index {
+  font-size:0.75rem; font-weight:700; color:var(--green-dark);
+  background:var(--green-bg); width:24px; height:24px;
+  border-radius:9999px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.param-name-input {
+  flex:1; background:transparent; border:none; border-bottom:1px solid var(--gray-border);
+  color:var(--gray); font-family:var(--font); font-size:0.9rem; font-weight:600;
+  padding:2px 0; outline:none; transition:var(--transition);
+}
+.param-name-input:focus { border-bottom-color:var(--green); box-shadow:none; }
+.param-remove {
+  background:none; border:none; color:var(--gray-subtle); cursor:pointer;
+  font-size:18px; padding:2px 6px; border-radius:var(--radius-sm); transition:var(--transition);
+}
+.param-remove:hover { color:var(--red); background:rgba(240,66,28,0.08); }
+.param-bounds { display:flex; gap:8px; }
+.param-bounds label {
+  font-size:0.8rem; color:var(--gray-muted); font-weight:500;
+  display:flex; flex-direction:column; gap:4px; flex:1;
+}
+
+/* ── Inputs ── */
+input[type="number"], input[type="text"], select {
+  background:#ffffff; border:1px solid var(--gray-border); border-radius:var(--radius-lg);
+  color:var(--gray); font-family:var(--font); font-size:0.9rem; padding:8px 10px;
+  outline:none; width:100%; transition:var(--transition);
+}
+input:focus, select:focus {
+  outline:none; box-shadow:0 0 0 2px #ffffff, 0 0 0 4px var(--green); border-color:var(--green);
+}
+select {
+  cursor:pointer; appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; padding-right:28px;
+}
+
+/* ── Buttons ── */
+.btn {
+  font-family:var(--font); font-size:0.8rem; font-weight:600; padding:8px 16px;
+  border-radius:var(--radius-lg); border:none; cursor:pointer; transition:var(--transition);
+}
+.btn-primary { background:var(--green); color:#ffffff; }
+.btn-primary:hover { background:var(--green-dark); }
+.btn-outline { background:transparent; border:1px solid var(--gray-border); color:var(--gray-muted); }
+.btn-outline:hover { border-color:var(--green); color:var(--green); }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+.btn:focus { outline:none; box-shadow:0 0 0 2px #ffffff, 0 0 0 4px var(--green); }
+
+.add-param-btn {
+  width:100%; padding:10px; background:var(--green-bg); border:1px dashed var(--green-light);
+  border-radius:var(--radius-lg); color:var(--green-dark); font-family:var(--font);
+  font-size:0.8rem; font-weight:600; cursor:pointer; transition:var(--transition);
+}
+.add-param-btn:hover { background:rgba(51,178,87,0.25); border-color:var(--green); }
+.add-param-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* ── DOE Settings ── */
+.doe-settings { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.doe-row { display:flex; gap:8px; align-items:center; }
+.doe-row label {
+  font-size:0.8rem; color:var(--gray-muted); font-weight:500;
+  flex:1; display:flex; flex-direction:column; gap:4px;
+}
+
+/* ── Constraints ── */
+.constraint-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.constraint-input {
+  flex:1; font-family:'Courier New', monospace; font-size:0.85rem;
+  background:#ffffff; border:1px solid var(--gray-border); border-radius:var(--radius-lg);
+  color:var(--gray); padding:8px 10px; outline:none; transition:var(--transition);
+}
+.constraint-input:focus { box-shadow:0 0 0 2px #ffffff, 0 0 0 4px var(--green); border-color:var(--green); }
+.constraint-remove {
+  background:none; border:none; color:var(--gray-subtle); cursor:pointer;
+  font-size:16px; transition:var(--transition);
+}
+.constraint-remove:hover { color:var(--red); }
+.var-pills { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px; }
+.var-pill {
+  font-size:0.75rem; font-weight:600; padding:4px 10px; border-radius:9999px;
+  background:var(--green-bg); color:var(--green-dark); border:1px solid var(--green-light);
+  cursor:pointer; font-family:'Courier New', monospace; user-select:none; transition:var(--transition);
+}
+.var-pill:hover { background:rgba(51,178,87,0.3); }
+.constraint-status { font-size:0.8rem; color:var(--gray-muted); margin-top:4px; }
+.constraint-status.error { color:var(--red); }
+
+/* ── Generate Bar ── */
+.generate-section { display:flex; gap:8px; align-items:center; }
+.results-summary { font-size:0.8rem; color:var(--gray-muted); margin-top:8px; }
+.results-summary span { font-weight:600; }
+.results-summary .feasible-ct { color:var(--green); }
+.results-summary .infeasible-ct { color:var(--red); }
+
+/* ── Right Pane ── */
+.plot-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.plot-toolbar {
+  display:flex; align-items:center; gap:8px; padding:10px 16px;
+  border-bottom:1px solid var(--gray-border); background:#ffffff; flex-wrap:wrap;
+}
+.plot-toolbar label { font-size:0.8rem; color:var(--gray-muted); font-weight:600; }
+
+/* ── View Buttons (pill tabs) ── */
+.view-tabs {
+  display:inline-flex; gap:4px; background:#f3f4f6; padding:4px; border-radius:var(--radius-lg);
+}
+.view-btn {
+  font-family:var(--font); font-size:0.8rem; font-weight:600; padding:6px 12px;
+  border-radius:var(--radius-md); border:none; background:transparent;
+  color:var(--gray-muted); cursor:pointer; transition:var(--transition);
+}
+.view-btn.active {
+  background:#ffffff; color:var(--green);
+  box-shadow:0 1px 2px rgba(0,0,0,0.05);
+}
+.view-btn:hover:not(.active) { color:var(--gray); }
+
+.slice-control { display:flex; align-items:center; gap:6px; margin-left:8px; }
+.slice-control input[type="range"] {
+  width:120px; accent-color:var(--green); height:4px;
+}
+.slice-val { font-size:0.8rem; color:var(--gray); font-weight:600; min-width:48px; }
+.canvas-wrap { flex:1; position:relative; background:#fafafa; }
+.canvas-wrap canvas { position:absolute; top:0; left:0; }
+
+/* ── Table ── */
+.table-section {
+  max-height:200px; overflow:auto; border-top:1px solid var(--gray-border);
+  background:#ffffff; flex-shrink:0;
+}
+.table-section table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+.table-section th {
+  position:sticky; top:0; background:#ffffff; font-size:0.75rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.5px; color:var(--gray-muted);
+  padding:8px 12px; text-align:left; border-bottom:1px solid var(--gray-border);
+}
+.table-section td {
+  padding:6px 12px; border-bottom:1px solid #f3f4f6;
+  font-family:'Courier New', monospace; font-size:0.8rem; color:var(--gray);
+}
+.table-section tr:hover td { background:#f9fafb; }
+.feas-yes { color:var(--green); font-weight:600; }
+.feas-no { color:var(--red); font-weight:600; }
+.table-toolbar {
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-top:1px solid var(--gray-border); background:#ffffff; flex-shrink:0;
+}
+.table-toolbar .count { font-size:0.8rem; color:var(--gray-muted); }
+
+.sep { width:1px; height:20px; background:var(--gray-border); margin:0 4px; }
+
+/* ── Empty State ── */
+.empty-state {
+  display:flex; align-items:center; justify-content:center; flex:1;
+  flex-direction:column; gap:8px; color:var(--gray-subtle); font-size:0.9rem;
+}
+.empty-state svg { opacity:0.25; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:#f3f4f6; }
+::-webkit-scrollbar-thumb { background:var(--gray-light); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--gray-subtle); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="voltt">Voltt</span> DOE Explorer</h1>
+  <span class="subtitle">Design of Experiments Generator</span>
+</div>
+
+<div class="main">
+  <div class="panel" id="panel">
+    <!-- PARAMETERS -->
+    <div>
+      <div class="section-title">Parameters</div>
+      <div id="paramList"></div>
+      <button class="add-param-btn" id="addParamBtn" onclick="addParam()">+ Add Parameter</button>
+    </div>
+
+    <!-- DOE METHOD -->
+    <div>
+      <div class="section-title">DOE Method</div>
+      <select id="doeMethod" onchange="onMethodChange()">
+        <option value="fullfact">Full Factorial</option>
+        <option value="lhs">Latin Hypercube</option>
+        <option value="ccd">Central Composite (CCD)</option>
+        <option value="boxbehnken">Box-Behnken</option>
+        <option value="random">Random Uniform</option>
+        <option value="sobol">Sobol Sequence</option>
+      </select>
+      <div class="doe-settings" id="doeSettings"></div>
+    </div>
+
+    <!-- CONSTRAINTS -->
+    <div>
+      <div class="section-title">Constraints</div>
+      <div class="var-pills" id="varPills"></div>
+      <div id="constraintList"></div>
+      <button class="add-param-btn" onclick="addConstraint()" style="margin-top:4px">+ Add Constraint</button>
+      <div class="constraint-status" id="constraintStatus"></div>
+    </div>
+
+    <!-- GENERATE -->
+    <div>
+      <div class="generate-section">
+        <button class="btn btn-primary" onclick="generate()" id="genBtn">Generate</button>
+        <button class="btn btn-outline" onclick="exportCSV()" id="exportBtn" disabled>Export CSV</button>
+      </div>
+      <div class="results-summary" id="resultsSummary"></div>
+    </div>
+  </div>
+
+  <div class="plot-area">
+    <div class="plot-toolbar" id="plotToolbar"></div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="plotCanvas"></canvas>
+      <div class="empty-state" id="emptyState">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+        <span>Define parameters and generate a design</span>
+      </div>
+    </div>
+    <div class="table-section" id="tableSection" style="display:none"></div>
+    <div class="table-toolbar" id="tableToolbar" style="display:none">
+      <span class="count" id="tableCount"></span>
+      <label style="font-size:0.8rem;color:var(--gray-muted);margin-left:auto;display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="feasOnlyExport" style="accent-color:var(--green)"> Feasible only
+      </label>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════
+// CHART CONSTANTS (Voltt style guide)
+// ═══════════════════════════════════════════════════════════════════
+const CHART = {
+  bg:'#fafafa', grid:'#eeeeee', axis:'#cccccc', text:'#323232',
+  textMuted:'#6b7280', font:"'Montserrat', sans-serif",
+  series:['#33b257','#f0421c','#58b8fe','#7d3c98','#ffc107','#ffa500'],
+  feasible:'#33b257', infeasible:'rgba(240,66,28,0.45)',
+  feasibleFill:'rgba(51,178,87,0.7)', infeasibleFill:'rgba(240,66,28,0.3)',
+  regionFill:'rgba(51,178,87,0.08)', regionBorder:'rgba(51,178,87,0.3)',
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+let params = [];
+let constraints = [];
+let points = null;
+let viewMode = '3d';
+let sliceVal = 0.5, sliceAxis = 2;
+let rot = {ax:-0.4, ay:0.6};
+let dragging = false, dragStart={x:0,y:0}, rotStart={ax:0,ay:0};
+let zoom = 1.0;
+let lastConstraintInput = null;
+
+// ═══════════════════════════════════════════════════════════════════
+// PARAMETERS
+// ═══════════════════════════════════════════════════════════════════
+function addParam() {
+  if (params.length >= 3) return;
+  const id = Date.now();
+  params.push({id, name:'x'+(params.length+1), min:0, max:1});
+  renderParams(); onMethodChange(); updateVarPills();
+}
+
+function removeParam(id) {
+  params = params.filter(p=>p.id!==id);
+  renderParams(); onMethodChange(); updateVarPills();
+  points = null; renderPlot();
+}
+
+function renderParams() {
+  const el = document.getElementById('paramList');
+  el.innerHTML = '';
+  params.forEach((p,i) => {
+    const d = document.createElement('div');
+    d.className = 'param-card';
+    d.innerHTML = `
+      <div class="param-header">
+        <span class="param-index">${i+1}</span>
+        <input class="param-name-input" value="${p.name}" placeholder="Name"
+          oninput="params[${i}].name=this.value;updateVarPills();onMethodChange()">
+        <button class="param-remove" onclick="removeParam(${p.id})">&times;</button>
+      </div>
+      <div class="param-bounds">
+        <label>Min<input type="number" value="${p.min}" onchange="params[${i}].min=+this.value" step="any"></label>
+        <label>Max<input type="number" value="${p.max}" onchange="params[${i}].max=+this.value" step="any"></label>
+      </div>`;
+    el.appendChild(d);
+  });
+  document.getElementById('addParamBtn').disabled = params.length >= 3;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VARIABLE PILLS
+// ═══════════════════════════════════════════════════════════════════
+function updateVarPills() {
+  const el = document.getElementById('varPills');
+  el.innerHTML = '';
+  params.forEach(p => {
+    const s = document.createElement('span');
+    s.className = 'var-pill'; s.textContent = p.name;
+    s.onclick = () => insertVar(p.name);
+    el.appendChild(s);
+  });
+}
+
+function insertVar(name) {
+  if (!lastConstraintInput) {
+    const inputs = document.querySelectorAll('.constraint-input');
+    if (inputs.length) lastConstraintInput = inputs[inputs.length-1]; else return;
+  }
+  const inp = lastConstraintInput;
+  const s = inp.selectionStart ?? inp.value.length, e = inp.selectionEnd ?? s;
+  inp.value = inp.value.slice(0,s) + name + inp.value.slice(e);
+  inp.focus();
+  inp.selectionStart = inp.selectionEnd = s + name.length;
+  const idx = inp.dataset.idx;
+  if (idx !== undefined) constraints[idx].expr = inp.value;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONSTRAINTS
+// ═══════════════════════════════════════════════════════════════════
+function addConstraint() { constraints.push({expr:''}); renderConstraints(); }
+
+function removeConstraint(i) { constraints.splice(i,1); renderConstraints(); }
+
+function renderConstraints() {
+  const el = document.getElementById('constraintList');
+  el.innerHTML = '';
+  constraints.forEach((c,i) => {
+    const d = document.createElement('div');
+    d.className = 'constraint-row';
+    const ex = params.length >= 2
+      ? `e.g. ${params[0]?.name||'x1'} + ${params[1]?.name||'x2'} <= 1.5`
+      : `e.g. ${params[0]?.name||'x1'} >= 0.2`;
+    d.innerHTML = `
+      <input class="constraint-input" type="text" data-idx="${i}" value="${c.expr}" placeholder="${ex}"
+        oninput="constraints[${i}].expr=this.value"
+        onfocus="lastConstraintInput=this">
+      <button class="constraint-remove" onclick="removeConstraint(${i})">&times;</button>`;
+    el.appendChild(d);
+  });
+}
+
+function compileConstraints() {
+  const names = params.map(p=>p.name);
+  const fns = [];
+  const st = document.getElementById('constraintStatus');
+  for (let i=0; i<constraints.length; i++) {
+    let expr = constraints[i].expr.trim();
+    if (!expr) continue;
+    try {
+      const fn = new Function(...names, 'return (' + expr + ');');
+      fn(...names.map(()=>0.5));
+      fns.push(fn);
+    } catch(e) {
+      st.textContent = 'Error in constraint '+(i+1)+': '+e.message;
+      st.className = 'constraint-status error';
+      return null;
+    }
+  }
+  st.textContent = ''; st.className = 'constraint-status';
+  return fns;
+}
+
+function evalFeasible(vals, fns) {
+  if (!fns || !fns.length) return true;
+  return fns.every(fn => { try { return !!fn(...vals); } catch { return false; } });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DOE METHOD SETTINGS
+// ═══════════════════════════════════════════════════════════════════
+function onMethodChange() {
+  const m = document.getElementById('doeMethod').value;
+  const el = document.getElementById('doeSettings');
+  const n = params.length;
+  let h = '';
+  if (m === 'fullfact') {
+    params.forEach((p,i) => {
+      h += `<div class="doe-row"><label>Levels: ${p.name}<input type="number" id="ff_n${i}" value="5" min="2" max="50"></label></div>`;
+    });
+  } else if (m === 'lhs') {
+    h = `<div class="doe-row"><label>Sample count<input type="number" id="lhs_n" value="20" min="2" max="1000"></label></div>
+         <div class="doe-row"><label>Optimisation<select id="lhs_opt"><option value="none">None</option><option value="maximin" selected>Maximin</option></select></label></div>`;
+  } else if (m === 'ccd') {
+    h = `<div class="doe-row"><label>Alpha<select id="ccd_alpha"><option value="face">Face-centred</option><option value="rotatable">Rotatable</option><option value="spherical">Spherical</option></select></label></div>
+         <div class="doe-row"><label>Centre points<input type="number" id="ccd_cp" value="3" min="1" max="10"></label></div>`;
+  } else if (m === 'boxbehnken') {
+    h = `<div class="doe-row"><label>Centre points<input type="number" id="bb_cp" value="3" min="1" max="10"></label></div>`;
+    if (n !== 3) h += `<div style="font-size:0.8rem;color:var(--orange);margin-top:4px;">Requires exactly 3 parameters</div>`;
+  } else if (m === 'random') {
+    h = `<div class="doe-row"><label>Sample count<input type="number" id="rand_n" value="30" min="1" max="2000"></label></div>`;
+  } else if (m === 'sobol') {
+    h = `<div class="doe-row"><label>Sample count (power of 2)<input type="number" id="sob_n" value="32" min="4" max="1024"></label></div>`;
+  }
+  el.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DOE GENERATION ALGORITHMS
+// ═══════════════════════════════════════════════════════════════════
+function genFullFactorial() {
+  const levels = params.map((_,i) => +(document.getElementById('ff_n'+i)?.value||5));
+  const pts = [], nd = params.length;
+  function recurse(dim, cur) {
+    if (dim === nd) { pts.push([...cur]); return; }
+    const lv = levels[dim];
+    for (let j=0; j<lv; j++) { cur[dim] = lv===1 ? 0.5 : j/(lv-1); recurse(dim+1, cur); }
+  }
+  recurse(0, new Array(nd));
+  return pts;
+}
+
+function genLHS() {
+  const n = +(document.getElementById('lhs_n')?.value||20), d = params.length;
+  const opt = document.getElementById('lhs_opt')?.value||'none';
+  function makeLHS() {
+    const m = [];
+    for (let j=0; j<d; j++) {
+      const perm = Array.from({length:n},(_,i)=>i);
+      for (let i=n-1;i>0;i--) { const k=Math.floor(Math.random()*(i+1)); [perm[i],perm[k]]=[perm[k],perm[i]]; }
+      m.push(perm);
+    }
+    return Array.from({length:n},(_,i)=> m.map(col=>(col[i]+Math.random())/n));
+  }
+  if (opt==='none') return makeLHS();
+  let best = makeLHS(), bestMD = minDist(best);
+  for (let iter=0; iter<200; iter++) {
+    const c = makeLHS(), md = minDist(c);
+    if (md>bestMD) { best=c; bestMD=md; }
+  }
+  return best;
+}
+
+function minDist(pts) {
+  let md=Infinity;
+  for (let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++) {
+    let s=0; for(let k=0;k<pts[0].length;k++) s+=(pts[i][k]-pts[j][k])**2;
+    if(s<md) md=s;
+  }
+  return md;
+}
+
+function genCCD() {
+  const k=params.length, at=document.getElementById('ccd_alpha')?.value||'face';
+  const cp=+(document.getElementById('ccd_cp')?.value||3);
+  let alpha = at==='face' ? 1 : at==='rotatable' ? Math.pow(2,k/4) : Math.sqrt(k);
+  const pts=[];
+  for (let i=0;i<(1<<k);i++) { const pt=[]; for(let j=0;j<k;j++) pt.push((i>>j)&1?1:0); pts.push(pt); }
+  for (let j=0;j<k;j++) {
+    const lo=Array(k).fill(0.5); lo[j]=0.5-alpha*0.5;
+    const hi=Array(k).fill(0.5); hi[j]=0.5+alpha*0.5;
+    pts.push(lo,hi);
+  }
+  for (let i=0;i<cp;i++) pts.push(Array(k).fill(0.5));
+  return pts.map(p=>p.map(v=>Math.max(0,Math.min(1,v))));
+}
+
+function genBoxBehnken() {
+  if (params.length!==3) return [];
+  const cp=+(document.getElementById('bb_cp')?.value||3);
+  const base=[[0,0,.5],[0,1,.5],[1,0,.5],[1,1,.5],[0,.5,0],[0,.5,1],[1,.5,0],[1,.5,1],[.5,0,0],[.5,0,1],[.5,1,0],[.5,1,1]];
+  const pts=[...base];
+  for (let i=0;i<cp;i++) pts.push([.5,.5,.5]);
+  return pts;
+}
+
+function genRandom() {
+  const n=+(document.getElementById('rand_n')?.value||30), d=params.length;
+  return Array.from({length:n}, ()=>Array.from({length:d}, ()=>Math.random()));
+}
+
+function genSobol() {
+  let n=+(document.getElementById('sob_n')?.value||32);
+  n=Math.pow(2, Math.ceil(Math.log2(n)));
+  const d=params.length, bases=[2,3,5];
+  function vdc(idx,base) { let r=0,f=1/base,i=idx; while(i>0){r+=(i%base)*f;f/=base;i=Math.floor(i/base);} return r; }
+  return Array.from({length:n},(_,i)=>{
+    if(d===1) return [(i+0.5)/n];
+    return Array.from({length:d},(_,j)=>j===0?(i+0.5)/n:vdc(i+1,bases[j]));
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GENERATE
+// ═══════════════════════════════════════════════════════════════════
+function generate() {
+  if (!params.length) return;
+  const m = document.getElementById('doeMethod').value;
+  const gen = {fullfact:genFullFactorial,lhs:genLHS,ccd:genCCD,boxbehnken:genBoxBehnken,random:genRandom,sobol:genSobol};
+  const norm = (gen[m]||genRandom)();
+  if (!norm.length) { alert('No points generated. Check settings.'); return; }
+  const cfns = compileConstraints();
+  if (cfns === null) return;
+
+  points = norm.map(nv => {
+    const vals = nv.map((v,i) => params[i].min + v*(params[i].max - params[i].min));
+    return {norm:nv, vals, feasible:evalFeasible(vals,cfns)};
+  });
+
+  const nF = points.filter(p=>p.feasible).length, nI = points.length - nF;
+  document.getElementById('resultsSummary').innerHTML =
+    `<span>${points.length}</span> points &mdash; <span class="feasible-ct">${nF} feasible</span> &middot; <span class="infeasible-ct">${nI} infeasible</span>`;
+  document.getElementById('exportBtn').disabled = false;
+  setupToolbar(); renderTable(); renderPlot();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TOOLBAR
+// ═══════════════════════════════════════════════════════════════════
+function setupToolbar() {
+  const tb = document.getElementById('plotToolbar'), n = params.length;
+  let h = '<label>View:</label><div class="view-tabs">';
+  if (n===1) { h += vb('strip','Strip',true); }
+  else if (n===2) { h += vb('2d','2D Scatter',true); }
+  else if (n===3) {
+    h += vb('3d','3D',true);
+    h += vb('xy',params[0].name+'–'+params[1].name);
+    h += vb('xz',params[0].name+'–'+params[2].name);
+    h += vb('yz',params[1].name+'–'+params[2].name);
+    h += vb('slice','Slice');
+  }
+  h += '</div>';
+  tb.innerHTML = h;
+  viewMode = n===3?'3d':n===2?'2d':'strip';
+  function vb(id,label,active) {
+    return `<button class="view-btn ${active?'active':''}" data-view="${id}" onclick="setView('${id}')">${label}</button>`;
+  }
+}
+
+function setView(v) {
+  viewMode = v;
+  document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  let sc = document.getElementById('sliceControls');
+  if (v==='slice') {
+    if (!sc) { sc=document.createElement('div'); sc.id='sliceControls'; sc.className='slice-control'; document.getElementById('plotToolbar').appendChild(sc); }
+    updateSliceControls(); sc.style.display='flex';
+  } else if (sc) sc.style.display='none';
+  renderPlot();
+}
+
+function updateSliceControls() {
+  const sc = document.getElementById('sliceControls');
+  if (!sc) return;
+  sc.innerHTML = `<select id="sliceAxisSel" onchange="sliceAxis=+this.value;renderPlot()" style="width:auto;padding:4px 24px 4px 8px;font-size:0.8rem;">
+    ${params.map((p,i)=>`<option value="${i}" ${i===sliceAxis?'selected':''}>${p.name}</option>`).join('')}
+  </select>
+  <input type="range" min="0" max="1" step="0.01" value="${sliceVal}"
+    oninput="sliceVal=+this.value;document.getElementById('sliceValTxt').textContent=sliceValReal();renderPlot()">
+  <span class="slice-val" id="sliceValTxt">${sliceValReal()}</span>`;
+}
+
+function sliceValReal() {
+  const p=params[sliceAxis];
+  return p?(p.min+sliceVal*(p.max-p.min)).toFixed(3):sliceVal.toFixed(3);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════════════════════════
+function renderPlot() {
+  const wrap=document.getElementById('canvasWrap'), cv=document.getElementById('plotCanvas');
+  const ctx=cv.getContext('2d'), empty=document.getElementById('emptyState');
+  if (!points||!points.length) { empty.style.display='flex'; return; }
+  empty.style.display='none';
+
+  const dpr=window.devicePixelRatio||1;
+  const W=wrap.clientWidth, H=wrap.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle=CHART.bg; ctx.fillRect(0,0,W,H);
+
+  const pad={t:40,r:30,b:50,l:60};
+  const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+
+  if (params.length===1) drawStrip(ctx,pad,pw,ph);
+  else if (params.length===2) draw2D(ctx,pad,pw,ph);
+  else if (params.length===3) {
+    if (viewMode==='3d') draw3D(ctx,W,H);
+    else if (viewMode==='slice') drawSlice(ctx,pad,pw,ph);
+    else drawProjection(ctx,pad,pw,ph);
+  }
+}
+
+// ── 1D Strip ──
+function drawStrip(ctx,pad,pw,ph) {
+  const p=params[0];
+  ctx.save(); ctx.translate(pad.l,pad.t);
+  drawConstraintRegion1D(ctx,pw,ph);
+  drawXAxis(ctx,p,pw,ph);
+  const y0=ph/2;
+  ctx.strokeStyle=CHART.axis; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,y0); ctx.lineTo(pw,y0); ctx.stroke();
+  points.forEach(pt=>{
+    const x=pt.norm[0]*pw;
+    ctx.beginPath(); ctx.arc(x,y0+(Math.random()-0.5)*ph*0.4,5,0,Math.PI*2);
+    ctx.fillStyle=pt.feasible?CHART.feasibleFill:CHART.infeasibleFill;
+    ctx.fill();
+    ctx.strokeStyle=pt.feasible?CHART.feasible:'rgba(240,66,28,0.6)';
+    ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawConstraintRegion1D(ctx,pw,ph) {
+  const cfns=compileConstraints(); if(!cfns||!cfns.length) return;
+  const res=200;
+  for (let i=0;i<res;i++) {
+    const t=i/res, v=params[0].min+t*(params[0].max-params[0].min);
+    if (evalFeasible([v],cfns)) { ctx.fillStyle=CHART.regionFill; ctx.fillRect(t*pw,0,pw/res+1,ph); }
+  }
+}
+
+// ── 2D Scatter ──
+function draw2D(ctx,pad,pw,ph) {
+  ctx.save(); ctx.translate(pad.l,pad.t);
+  drawConstraintRegion2D(ctx,pw,ph,0,1);
+  drawGrid2D(ctx,params[0],params[1],pw,ph);
+  points.forEach(pt=>{
+    const x=pt.norm[0]*pw, y=(1-pt.norm[1])*ph;
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle=pt.feasible?CHART.feasibleFill:CHART.infeasibleFill;
+    ctx.fill();
+    ctx.strokeStyle=pt.feasible?CHART.feasible:'rgba(240,66,28,0.6)';
+    ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawConstraintRegion2D(ctx,pw,ph,ai,bi,fixedAxis,fixedVal) {
+  const cfns=compileConstraints(); if(!cfns||!cfns.length) return;
+  const res=80, cw=pw/res, ch=ph/res;
+  for (let i=0;i<res;i++) for(let j=0;j<res;j++) {
+    const ta=(i+0.5)/res, tb=(j+0.5)/res;
+    const vals=new Array(params.length);
+    vals[ai]=params[ai].min+ta*(params[ai].max-params[ai].min);
+    vals[bi]=params[bi].min+tb*(params[bi].max-params[bi].min);
+    if(fixedAxis!==undefined) vals[fixedAxis]=fixedVal;
+    const allVals=vals.map((v,k)=>v!==undefined?v:(params[k].min+0.5*(params[k].max-params[k].min)));
+    if(evalFeasible(allVals,cfns)) { ctx.fillStyle=CHART.regionFill; ctx.fillRect(i*cw,(res-1-j)*ch,cw+0.5,ch+0.5); }
+  }
+  // Boundary
+  ctx.fillStyle=CHART.regionBorder;
+  for (let i=0;i<res;i++) for(let j=0;j<res;j++) {
+    const ta=(i+0.5)/res, tb=(j+0.5)/res;
+    const vals=new Array(params.length);
+    vals[ai]=params[ai].min+ta*(params[ai].max-params[ai].min);
+    vals[bi]=params[bi].min+tb*(params[bi].max-params[bi].min);
+    if(fixedAxis!==undefined) vals[fixedAxis]=fixedVal;
+    const allVals=vals.map((v,k)=>v!==undefined?v:(params[k].min+0.5*(params[k].max-params[k].min)));
+    if(!evalFeasible(allVals,cfns)) continue;
+    const nb=[[i-1,j],[i+1,j],[i,j-1],[i,j+1]];
+    for(const[ni,nj] of nb) {
+      if(ni<0||ni>=res||nj<0||nj>=res) continue;
+      const nv=new Array(params.length);
+      nv[ai]=params[ai].min+(ni+0.5)/res*(params[ai].max-params[ai].min);
+      nv[bi]=params[bi].min+(nj+0.5)/res*(params[bi].max-params[bi].min);
+      if(fixedAxis!==undefined) nv[fixedAxis]=fixedVal;
+      const nAll=nv.map((v,k)=>v!==undefined?v:(params[k].min+0.5*(params[k].max-params[k].min)));
+      if(!evalFeasible(nAll,cfns)) { ctx.fillRect(i*cw,(res-1-j)*ch,cw+0.5,ch+0.5); break; }
+    }
+  }
+}
+
+function drawGrid2D(ctx,px,py,pw,ph) {
+  ctx.font='12px '+CHART.font; ctx.textAlign='center';
+  for (let i=0;i<=5;i++) {
+    const x=i/5*pw, v=px.min+i/5*(px.max-px.min);
+    ctx.strokeStyle=CHART.grid; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,ph); ctx.stroke();
+    ctx.fillStyle=CHART.text; ctx.fillText(fmt(v),x,ph+18);
+  }
+  ctx.fillStyle=CHART.textMuted; ctx.font='11px '+CHART.font;
+  ctx.fillText(px.name, pw/2, ph+38);
+  ctx.textAlign='right'; ctx.font='12px '+CHART.font;
+  for (let i=0;i<=5;i++) {
+    const y=(1-i/5)*ph, v=py.min+i/5*(py.max-py.min);
+    ctx.strokeStyle=CHART.grid; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(pw,y); ctx.stroke();
+    ctx.fillStyle=CHART.text; ctx.fillText(fmt(v),-8,y+4);
+  }
+  ctx.save(); ctx.translate(-44,ph/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.fillStyle=CHART.textMuted; ctx.font='11px '+CHART.font;
+  ctx.fillText(py.name,0,0); ctx.restore();
+}
+
+function drawXAxis(ctx,px,pw,ph) {
+  ctx.font='12px '+CHART.font; ctx.textAlign='center';
+  for (let i=0;i<=5;i++) {
+    const x=i/5*pw, v=px.min+i/5*(px.max-px.min);
+    ctx.strokeStyle=CHART.grid; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,ph); ctx.stroke();
+    ctx.fillStyle=CHART.text; ctx.fillText(fmt(v),x,ph+18);
+  }
+  ctx.fillStyle=CHART.textMuted; ctx.font='11px '+CHART.font;
+  ctx.fillText(px.name, pw/2, ph+38);
+}
+
+// ── 3D ──
+function draw3D(ctx,W,H) {
+  const cx=W/2, cy=H/2, sc=Math.min(W,H)*0.32*zoom;
+  ctx.save();
+  const ca=Math.cos(rot.ax),sa=Math.sin(rot.ax),cb=Math.cos(rot.ay),sb=Math.sin(rot.ay);
+  function proj(nx,ny,nz) {
+    let x=nx-0.5,y=ny-0.5,z=nz-0.5;
+    let x1=x*cb+z*sb, y1=y, z1=-x*sb+z*cb;
+    let x2=x1, y2=y1*ca-z1*sa, z2=y1*sa+z1*ca;
+    return {x:cx+x2*sc, y:cy-y2*sc, z:z2};
+  }
+
+  // Wireframe cube
+  const verts=[[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]];
+  const edges=[[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
+  ctx.strokeStyle=CHART.grid; ctx.lineWidth=0.8;
+  edges.forEach(([a,b])=>{
+    const pa=proj(...verts[a]),pb=proj(...verts[b]);
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+  });
+
+  // Axes
+  const axes=[
+    {from:[0,0,0],to:[1,0,0],label:params[0].name},
+    {from:[0,0,0],to:[0,1,0],label:params[1].name},
+    {from:[0,0,0],to:[0,0,1],label:params[2].name}
+  ];
+  ctx.lineWidth=1.5;
+  axes.forEach((a,i)=>{
+    const f=proj(...a.from),t=proj(...a.to);
+    ctx.strokeStyle=CHART.series[i]; ctx.beginPath(); ctx.moveTo(f.x,f.y); ctx.lineTo(t.x,t.y); ctx.stroke();
+    ctx.fillStyle=CHART.series[i]; ctx.font='600 12px '+CHART.font; ctx.textAlign='center';
+    ctx.fillText(a.label, t.x+(t.x-f.x)*0.12, t.y+(t.y-f.y)*0.12+4);
+  });
+
+  // Tick labels
+  ctx.font='10px '+CHART.font; ctx.fillStyle=CHART.textMuted;
+  for (let d=0;d<3;d++) for(let t=0;t<=1;t++) {
+    const pos=[0,0,0]; pos[d]=t;
+    const pr=proj(...pos);
+    ctx.textAlign='center'; ctx.fillText(fmt(params[d].min+t*(params[d].max-params[d].min)), pr.x, pr.y+14);
+  }
+
+  // Points sorted by depth
+  const projected = points.map(pt=>({...pt,...proj(...pt.norm)})).sort((a,b)=>a.z-b.z);
+  projected.forEach(pt=>{
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,5,0,Math.PI*2);
+    ctx.fillStyle=pt.feasible?CHART.feasibleFill:CHART.infeasibleFill;
+    ctx.fill();
+    ctx.strokeStyle=pt.feasible?CHART.feasible:'rgba(240,66,28,0.5)';
+    ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// ── Projection ──
+function drawProjection(ctx,pad,pw,ph) {
+  let ai,bi;
+  if(viewMode==='xy'){ai=0;bi=1;} else if(viewMode==='xz'){ai=0;bi=2;} else{ai=1;bi=2;}
+  ctx.save(); ctx.translate(pad.l,pad.t);
+  drawConstraintRegion2D(ctx,pw,ph,ai,bi);
+  drawGrid2D(ctx,params[ai],params[bi],pw,ph);
+  points.forEach(pt=>{
+    const x=pt.norm[ai]*pw, y=(1-pt.norm[bi])*ph;
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle=pt.feasible?CHART.feasibleFill:CHART.infeasibleFill;
+    ctx.fill();
+    ctx.strokeStyle=pt.feasible?CHART.feasible:'rgba(240,66,28,0.5)';
+    ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// ── Slice ──
+function drawSlice(ctx,pad,pw,ph) {
+  const sa=sliceAxis, others=[0,1,2].filter(i=>i!==sa), ai=others[0], bi=others[1];
+  const fixedReal=params[sa].min+sliceVal*(params[sa].max-params[sa].min);
+  ctx.save(); ctx.translate(pad.l,pad.t);
+  drawConstraintRegion2D(ctx,pw,ph,ai,bi,sa,fixedReal);
+  drawGrid2D(ctx,params[ai],params[bi],pw,ph);
+
+  // Slice label
+  ctx.font='600 11px '+CHART.font; ctx.fillStyle=CHART.series[sa]; ctx.textAlign='left';
+  ctx.fillText(`Slice: ${params[sa].name} = ${fmt(fixedReal)}`, 4, -14);
+
+  const tol=0.08;
+  points.forEach(pt=>{
+    if(Math.abs(pt.norm[sa]-sliceVal)>tol) return;
+    const alpha=1-Math.abs(pt.norm[sa]-sliceVal)/tol;
+    const x=pt.norm[ai]*pw, y=(1-pt.norm[bi])*ph;
+    ctx.globalAlpha=alpha;
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle=pt.feasible?CHART.feasibleFill:CHART.infeasibleFill;
+    ctx.fill();
+    ctx.strokeStyle=pt.feasible?CHART.feasible:'rgba(240,66,28,0.5)';
+    ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TABLE
+// ═══════════════════════════════════════════════════════════════════
+function renderTable() {
+  const sec=document.getElementById('tableSection'), tb=document.getElementById('tableToolbar');
+  sec.style.display='block'; tb.style.display='flex';
+  let h='<table><thead><tr><th>#</th>';
+  params.forEach(p=>h+='<th>'+p.name+'</th>');
+  h+='<th>Feasible</th></tr></thead><tbody>';
+  points.forEach((pt,i)=>{
+    h+='<tr><td>'+(i+1)+'</td>';
+    pt.vals.forEach(v=>h+='<td>'+v.toFixed(4)+'</td>');
+    h+='<td class="'+(pt.feasible?'feas-yes':'feas-no')+'">'+(pt.feasible?'Yes':'No')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  sec.innerHTML=h;
+  const nf=points.filter(p=>p.feasible).length;
+  document.getElementById('tableCount').textContent=`${points.length} points (${nf} feasible)`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSV EXPORT
+// ═══════════════════════════════════════════════════════════════════
+function exportCSV() {
+  if(!points) return;
+  const fo=document.getElementById('feasOnlyExport')?.checked;
+  const data=fo?points.filter(p=>p.feasible):points;
+  let csv=params.map(p=>p.name).join(',')+',feasible\n';
+  data.forEach(pt=>csv+=pt.vals.map(v=>v.toFixed(6)).join(',')+','+(pt.feasible?1:0)+'\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='doe_design.csv'; a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function fmt(v) {
+  if(Math.abs(v)>=1000) return v.toFixed(0);
+  if(Math.abs(v)>=1) return v.toFixed(2);
+  if(Math.abs(v)>=0.01) return v.toFixed(3);
+  return v.toExponential(2);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 3D MOUSE / TOUCH INTERACTION
+// ═══════════════════════════════════════════════════════════════════
+const cv=document.getElementById('plotCanvas');
+cv.addEventListener('mousedown',e=>{
+  if(viewMode!=='3d'||params.length!==3) return;
+  dragging=true; dragStart={x:e.clientX,y:e.clientY};
+  rotStart={ax:rot.ax,ay:rot.ay}; cv.style.cursor='grabbing';
+});
+window.addEventListener('mousemove',e=>{
+  if(!dragging) return;
+  rot.ay=rotStart.ay+(e.clientX-dragStart.x)*0.008;
+  rot.ax=rotStart.ax+(e.clientY-dragStart.y)*0.008;
+  rot.ax=Math.max(-Math.PI/2,Math.min(Math.PI/2,rot.ax));
+  renderPlot();
+});
+window.addEventListener('mouseup',()=>{dragging=false;cv.style.cursor='';});
+cv.addEventListener('wheel',e=>{
+  if(viewMode!=='3d'||params.length!==3) return;
+  e.preventDefault();
+  zoom=Math.max(0.3,Math.min(3,zoom-e.deltaY*0.001));
+  renderPlot();
+},{passive:false});
+cv.addEventListener('touchstart',e=>{
+  if(viewMode!=='3d'||params.length!==3||e.touches.length!==1) return;
+  dragging=true; const t=e.touches[0];
+  dragStart={x:t.clientX,y:t.clientY}; rotStart={ax:rot.ax,ay:rot.ay};
+});
+cv.addEventListener('touchmove',e=>{
+  if(!dragging||e.touches.length!==1) return;
+  e.preventDefault(); const t=e.touches[0];
+  rot.ay=rotStart.ay+(t.clientX-dragStart.x)*0.008;
+  rot.ax=rotStart.ax+(t.clientY-dragStart.y)*0.008;
+  rot.ax=Math.max(-Math.PI/2,Math.min(Math.PI/2,rot.ax));
+  renderPlot();
+},{passive:false});
+cv.addEventListener('touchend',()=>{dragging=false;});
+
+window.addEventListener('resize',()=>{if(points) renderPlot();});
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+addParam(); addParam(); onMethodChange();
+</script>
+</body>
+</html>

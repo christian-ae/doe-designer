@@ -125,6 +125,7 @@ const state = {
   },
   repeats:   1,
   inputMode: 'values', // 'values' | 'counts'
+  plotTab:   '3d',     // '3d' | '2d'
   results:   null,
 };
 
@@ -688,45 +689,40 @@ const PLOT3D_CONFIG = {
   defaultZ: 'dischargeLoad',
 };
 
-function render3DPlot(runs) {
-  const { plotId, xSelId, ySelId, zSelId } = PLOT3D_CONFIG;
-  const xKey = document.getElementById(xSelId).value;
-  const yKey = document.getElementById(ySelId).value;
-  const zKey = document.getElementById(zSelId).value;
+const PLOT2D_CONFIG = {
+  plotId:   'plot-2d',
+  xSelId:   'plot2d-x',
+  ySelId:   'plot2d-y',
+  defaultX: 'temperature',
+  defaultY: 'chargeLoad',
+};
 
-  const f    = state.factors;
-  const vars = getVarOptions();
-  const xVar = vars.find(v => v.key === xKey);
-  const yVar = vars.find(v => v.key === yKey);
-  const zVar = vars.find(v => v.key === zKey);
-
-  const getVal = (r, key) => key === 'termComboIndex' ? r.termComboIndex : r[key];
-  const xVals  = runs.map(r => getVal(r, xKey));
-  const yVals  = runs.map(r => getVal(r, yKey));
-  const zVals  = runs.map(r => getVal(r, zKey));
-
+/**
+ * Per-axis helper: looks up the selected variable, extracts raw values, builds
+ * display-friendly strings (combo labels / level labels) and produces a Plotly
+ * axis layout object. Used by both 2D and 3D plot renderers.
+ */
+function computePlotAxis(runs, key) {
+  const f        = state.factors;
   const isCounts = state.inputMode === 'counts';
+  const vars     = getVarOptions();
+  const vari     = vars.find(v => v.key === key);
 
-  // Build per-point hover text with combo labels resolved
-  const getDisplayVal = (r, key, numVal) => {
-    if (key !== 'termComboIndex') return numVal;
+  const getVal  = (r, k) => k === 'termComboIndex' ? r.termComboIndex : r[k];
+  const values  = runs.map(r => getVal(r, key));
+
+  const displayValues = runs.map((r, i) => {
+    const v = values[i];
+    if (key !== 'termComboIndex') return v;
     if (isCounts) return `Level ${r.termComboIndex}`;
     const combo = f.termination.combinations[r.termComboIndex - 1];
     return combo ? comboLabel(combo) : `Combo ${r.termComboIndex}`;
-  };
-  const hoverTexts = runs.map((r, i) =>
-    `${xVar.label}: <b>${getDisplayVal(r, xKey, xVals[i])}</b><br>` +
-    `${yVar.label}: <b>${getDisplayVal(r, yKey, yVals[i])}</b><br>` +
-    `${zVar.label}: <b>${getDisplayVal(r, zKey, zVals[i])}</b><br>` +
-    `<i>Run ${r.run}</i>`
-  );
+  });
 
-  // Per-axis layout — combo axis gets categorical tick labels
-  const makeAxisLayout = (key, label) => {
-    const base = { title: { text: label, font: { size: 12 } } };
+  const buildLayout = (extra = {}) => {
+    const base = { title: { text: vari.label, font: { size: 12 } }, ...extra };
     if (key !== 'termComboIndex') return base;
-    const vals      = runs.map(r => r.termComboIndex);
-    const uniqueIdx = [...new Set(vals)].sort((a, b) => a - b);
+    const uniqueIdx = [...new Set(values)].sort((a, b) => a - b);
     const ticktext  = uniqueIdx.map(idx => {
       if (isCounts) return `Level ${idx}`;
       const combo = f.termination.combinations[idx - 1];
@@ -735,12 +731,32 @@ function render3DPlot(runs) {
     return { ...base, tickmode: 'array', tickvals: uniqueIdx, ticktext };
   };
 
+  return { label: vari.label, values, displayValues, buildLayout };
+}
+
+function render3DPlot(runs) {
+  const { plotId, xSelId, ySelId, zSelId } = PLOT3D_CONFIG;
+  const xKey = document.getElementById(xSelId).value;
+  const yKey = document.getElementById(ySelId).value;
+  const zKey = document.getElementById(zSelId).value;
+
+  const x = computePlotAxis(runs, xKey);
+  const y = computePlotAxis(runs, yKey);
+  const z = computePlotAxis(runs, zKey);
+
+  const hoverTexts = runs.map((r, i) =>
+    `${x.label}: <b>${x.displayValues[i]}</b><br>` +
+    `${y.label}: <b>${y.displayValues[i]}</b><br>` +
+    `${z.label}: <b>${z.displayValues[i]}</b><br>` +
+    `<i>Run ${r.run}</i>`
+  );
+
   const trace = {
     type:          'scatter3d',
     mode:          'markers',
-    x:             xVals,
-    y:             yVals,
-    z:             zVals,
+    x:             x.values,
+    y:             y.values,
+    z:             z.values,
     text:          hoverTexts,
     hovertemplate: '%{text}<extra></extra>',
     marker: {
@@ -753,9 +769,9 @@ function render3DPlot(runs) {
 
   const layout = {
     scene: {
-      xaxis:  makeAxisLayout(xKey, xVar.label),
-      yaxis:  makeAxisLayout(yKey, yVar.label),
-      zaxis:  makeAxisLayout(zKey, zVar.label),
+      xaxis:  x.buildLayout(),
+      yaxis:  y.buildLayout(),
+      zaxis:  z.buildLayout(),
       camera: { eye: { x: 1.6, y: 1.6, z: 1.2 } },
     },
     margin:        { t: 10, r: 10, b: 10, l: 10 },
@@ -767,11 +783,66 @@ function render3DPlot(runs) {
   Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
 }
 
+function render2DPlot(runs) {
+  const { plotId, xSelId, ySelId } = PLOT2D_CONFIG;
+  const xKey = document.getElementById(xSelId).value;
+  const yKey = document.getElementById(ySelId).value;
+
+  const x = computePlotAxis(runs, xKey);
+  const y = computePlotAxis(runs, yKey);
+
+  const hoverTexts = runs.map((r, i) =>
+    `${x.label}: <b>${x.displayValues[i]}</b><br>` +
+    `${y.label}: <b>${y.displayValues[i]}</b><br>` +
+    `<i>Run ${r.run}</i>`
+  );
+
+  const trace = {
+    type:          'scatter',
+    mode:          'markers',
+    x:             x.values,
+    y:             y.values,
+    text:          hoverTexts,
+    hovertemplate: '%{text}<extra></extra>',
+    marker: {
+      size:    10,
+      color:   '#33b257',
+      opacity: 0.8,
+      line:    { width: 1, color: '#1e6632' },
+    },
+  };
+
+  const layout = {
+    xaxis:         x.buildLayout({ automargin: true }),
+    yaxis:         y.buildLayout({ automargin: true }),
+    margin:        { t: 20, r: 20, b: 50, l: 60 },
+    autosize:      true,
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor:  '#fafafa',
+    font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
+  };
+
+  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
+}
+
+/** Render whichever scatter plot is currently active (2D or 3D). */
+function renderActivePlot(runs) {
+  if (state.plotTab === '2d') render2DPlot(runs);
+  else                        render3DPlot(runs);
+}
+
 function renderPlots(runs) {
   const varOptions = getVarOptions();
-  const { xSelId, ySelId, zSelId, defaultX, defaultY, defaultZ } = PLOT3D_CONFIG;
 
-  [[xSelId, defaultX], [ySelId, defaultY], [zSelId, defaultZ]].forEach(([selId, def]) => {
+  const allSelectors = [
+    [PLOT3D_CONFIG.xSelId, PLOT3D_CONFIG.defaultX],
+    [PLOT3D_CONFIG.ySelId, PLOT3D_CONFIG.defaultY],
+    [PLOT3D_CONFIG.zSelId, PLOT3D_CONFIG.defaultZ],
+    [PLOT2D_CONFIG.xSelId, PLOT2D_CONFIG.defaultX],
+    [PLOT2D_CONFIG.ySelId, PLOT2D_CONFIG.defaultY],
+  ];
+
+  allSelectors.forEach(([selId, def]) => {
     const sel = document.getElementById(selId);
     if (!sel) return;
 
@@ -787,7 +858,7 @@ function renderPlots(runs) {
     sel.value = varOptions.some(v => v.key === prev) ? prev : def;
   });
 
-  render3DPlot(runs);
+  renderActivePlot(runs);
 }
 
 // ── Parallel coordinates plot ──────────────────────────────────────────────
@@ -1063,6 +1134,32 @@ function init() {
     if (!el) return;
     el.addEventListener('change', () => {
       if (state.results) render3DPlot(state.results);
+    });
+  });
+
+  // 2D plot axis selectors — re-render on change
+  [PLOT2D_CONFIG.xSelId, PLOT2D_CONFIG.ySelId].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (state.results) render2DPlot(state.results);
+    });
+  });
+
+  // Plot tab buttons (2D / 3D)
+  document.querySelectorAll('.plot-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.plot;
+      if (tab !== '2d' && tab !== '3d') return;
+      state.plotTab = tab;
+      document.querySelectorAll('.plot-tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.plot === tab)
+      );
+      const cell3d = document.querySelector('.plot-cell-3d');
+      const cell2d = document.querySelector('.plot-cell-2d');
+      if (cell3d) cell3d.classList.toggle('hidden', tab !== '3d');
+      if (cell2d) cell2d.classList.toggle('hidden', tab !== '2d');
+      if (state.results) renderActivePlot(state.results);
     });
   });
 

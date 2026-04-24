@@ -615,6 +615,43 @@ code {
 }
 
 .plot-div-3d { height: 560px; }
+.plot-div-2d { height: 560px; }
+
+/* ── Plot tabs (2D / 3D) ── */
+.plot-tabs-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.plot-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--gray-100);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+}
+.plot-tab-btn {
+  padding: 7px 16px;
+  border: none;
+  background: transparent;
+  color: var(--gray-muted);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.plot-tab-btn.active {
+  background: #ffffff;
+  color: var(--green);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.plot-tab-btn:hover:not(.active) { color: var(--gray); }
+.plot-tab-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--green);
+}
 
 .parcoords-cell {
   border: 1px solid var(--gray-border);
@@ -759,6 +796,7 @@ code {
   #results { overflow: visible; }
   .plot-scroll { overflow: visible; }
   .plot-div-3d { height: 420px; }
+  .plot-div-2d { height: 420px; }
 }
 </style>
 </head>
@@ -1034,14 +1072,28 @@ code {
           </div>
         </div>
 
-        <div class="plot-section-title">3D Scatter</div>
-        <div class="plot-cell">
+        <div class="plot-tabs-row">
+          <div class="plot-tabs" role="tablist" aria-label="Scatter plot type">
+            <button type="button" class="plot-tab-btn active" data-plot="3d" role="tab">3D Scatter</button>
+            <button type="button" class="plot-tab-btn" data-plot="2d" role="tab">2D Scatter</button>
+          </div>
+        </div>
+
+        <div class="plot-cell plot-cell-3d">
           <div class="plot-controls">
             <label class="axis-label">X: <select id="plot3d-x" class="plot-axis-sel"></select></label>
             <label class="axis-label">Y: <select id="plot3d-y" class="plot-axis-sel"></select></label>
             <label class="axis-label">Z: <select id="plot3d-z" class="plot-axis-sel"></select></label>
           </div>
           <div id="plot-3d" class="plot-div-3d"></div>
+        </div>
+
+        <div class="plot-cell plot-cell-2d hidden">
+          <div class="plot-controls">
+            <label class="axis-label">X: <select id="plot2d-x" class="plot-axis-sel"></select></label>
+            <label class="axis-label">Y: <select id="plot2d-y" class="plot-axis-sel"></select></label>
+          </div>
+          <div id="plot-2d" class="plot-div-2d"></div>
         </div>
 
         <div class="plot-section-title">Parallel Coordinates</div>

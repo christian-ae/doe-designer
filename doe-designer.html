@@ -1231,17 +1231,19 @@ function updateOrthogonalBadge() {
 // ── Initialisation ─────────────────────────────────────────────────────────
 
 function init() {
-  // Input-mode toggle (Exact values / Level counts)
+  // Input-mode toggle (Range / Level counts / Exact values)
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
-      if (mode !== 'values' && mode !== 'counts') return;
+      if (mode !== 'range' && mode !== 'values' && mode !== 'counts') return;
       state.inputMode = mode;
       document.querySelectorAll('.mode-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.mode === mode)
       );
+      const rangePanel  = document.getElementById('mode-range');
       const valuesPanel = document.getElementById('mode-values');
       const countsPanel = document.getElementById('mode-counts');
+      if (rangePanel)  rangePanel.classList.toggle('hidden',  mode !== 'range');
       if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
       if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
       updateOrthogonalBadge();
@@ -2207,6 +2209,7 @@ code {
 
       <!-- Input mode toggle -->
       <div class="mode-toggle" role="tablist" aria-label="Input mode">
+        <button type="button" class="mode-btn" data-mode="range" role="tab">Range</button>
         <button type="button" class="mode-btn active" data-mode="counts" role="tab">Level counts</button>
         <button type="button" class="mode-btn" data-mode="values" role="tab">Exact values</button>
       </div>

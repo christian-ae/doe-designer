@@ -1039,10 +1039,12 @@ function validateAndGenerate() {
     runs = isRange
       ? generateLHSContinuous(f, state.methodParams.samples)
       : generateLHS(f, state.methodParams.samples);
-  } else {
+  } else if (state.method === 'orthogonal') {
     runs = isRange
       ? generateOrthogonalContinuous(f, state.methodParams.orthogonalSubdivisions)
       : generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
+  } else if (state.method === 'dOptimal') {
+    runs = generateDOptimal(f, state.methodParams.dOptimalModel, state.methodParams.dOptimalRuns);
   }
 
   state.results        = runs;

@@ -1222,13 +1222,16 @@ function updateExperimentDisplays() {
   const statRuns       = document.getElementById('stat-runs');
   const statRepeats    = document.getElementById('stat-repeats');
   const statCells      = document.getElementById('stat-cells');
+  const statVariance   = document.getElementById('stat-variance');
   const statMethod     = document.getElementById('stat-method');
+  const plotSummary    = document.querySelector('.plot-summary');
   const resultsSummary = document.getElementById('results-summary');
 
   if (!state.results) {
-    [statRuns, statRepeats, statCells, statMethod].forEach(el => {
+    [statRuns, statRepeats, statCells, statVariance, statMethod].forEach(el => {
       if (el) el.textContent = '—';
     });
+    if (plotSummary) plotSummary.classList.remove('show-variance');
     if (resultsSummary) resultsSummary.textContent = '';
     return;
   }
@@ -1261,6 +1264,14 @@ function updateExperimentDisplays() {
   if (resultsSummary) {
     resultsSummary.textContent =
       `${nRuns} run${nRuns !== 1 ? 's' : ''} · ${nCells} cell${nCells !== 1 ? 's' : ''} · ${methodLong[state.method]}`;
+  }
+
+  if (state.method === 'iOptimal' && state.iOptimalTrace !== null) {
+    if (statVariance) statVariance.textContent = fmt(state.iOptimalTrace);
+    if (plotSummary)  plotSummary.classList.add('show-variance');
+  } else {
+    if (statVariance) statVariance.textContent = '—';
+    if (plotSummary)  plotSummary.classList.remove('show-variance');
   }
 }
 

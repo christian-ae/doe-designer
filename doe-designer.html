@@ -372,6 +372,88 @@ function generateOrthogonal(factors, M) {
 }
 
 /**
+ * Continuous orthogonal sampler. Mirrors generateOrthogonal's bin assignment
+ * over active dimensions, but maps the fine-bin index to a continuous value
+ * via the bin midpoint: value = lo + ((bin + 0.5) / N) * (hi - lo).
+ *
+ * d = number of factors with min < max
+ * N = M^d total runs, subBins = M^(d-1)
+ */
+function generateOrthogonalContinuous(factors, M) {
+  const r = factors.termination.range;
+  const dims = [
+    { key: 'temperature',        lo: factors.temperature.range.min,    hi: factors.temperature.range.max    },
+    { key: 'chargeLoad',         lo: factors.chargeLoad.range.min,     hi: factors.chargeLoad.range.max     },
+    { key: 'dischargeLoad',      lo: factors.dischargeLoad.range.min,  hi: factors.dischargeLoad.range.max  },
+    { key: 'dischargeTermValue', lo: r.discharge.min,                  hi: r.discharge.max                  },
+    { key: 'chargeTermValue',    lo: r.charge.min,                     hi: r.charge.max                     },
+  ];
+
+  const activeIdxs = [];
+  dims.forEach((d, i) => {
+    if (Number.isFinite(d.lo) && Number.isFinite(d.hi) && d.lo < d.hi) activeIdxs.push(i);
+  });
+  const d = activeIdxs.length;
+
+  // All factors pinned: emit a single run with each lo (== hi).
+  if (d === 0) {
+    const row = {
+      run:               1,
+      dischargeTermType: r.discharge.type,
+      chargeTermType:    r.charge.type,
+    };
+    dims.forEach(dim => { row[dim.key] = dim.lo; });
+    return [row];
+  }
+
+  const N       = Math.pow(M, d);
+  const subBins = Math.pow(M, d - 1);
+
+  // Enumerate M^d super-cells across active dims only
+  const superCells = [];
+  (function build(dim, cur) {
+    if (dim === d) { superCells.push([...cur]); return; }
+    for (let m = 0; m < M; m++) { cur[dim] = m; build(dim + 1, cur); }
+  })(0, new Array(d));
+
+  // For each active dim: assign each super-cell a unique fine-bin in
+  // [m*subBins .. (m+1)*subBins). Preserves the LHS property.
+  const fineBins = [];
+  for (let dim = 0; dim < d; dim++) {
+    const cellsByBin = Array.from({ length: M }, () => []);
+    superCells.forEach((sc, idx) => cellsByBin[sc[dim]].push(idx));
+
+    const dimFineBins = new Array(superCells.length);
+    for (let m = 0; m < M; m++) {
+      const perm = fisherYates(Array.from({ length: subBins }, (_, i) => i));
+      cellsByBin[m].forEach((cellIdx, i) => {
+        dimFineBins[cellIdx] = m * subBins + perm[i];
+      });
+    }
+    fineBins.push(dimFineBins);
+  }
+
+  return superCells.map((_, i) => {
+    const row = {
+      run:               i + 1,
+      dischargeTermType: r.discharge.type,
+      chargeTermType:    r.charge.type,
+    };
+    dims.forEach((dim, fIdx) => {
+      const activeDim = activeIdxs.indexOf(fIdx);
+      if (activeDim === -1) {
+        row[dim.key] = dim.lo;  // held constant
+      } else {
+        const bin = fineBins[activeDim][i];
+        const u   = (bin + 0.5) / N;
+        row[dim.key] = dim.lo + u * (dim.hi - dim.lo);
+      }
+    });
+    return row;
+  });
+}
+
+/**
  * Continuous LHS sampler used in Range mode. For each active factor
  * (range with min < max), shuffle [0..n-1] independently; sample i picks the
  * permuted stratum index s for that factor and uses its midpoint as the

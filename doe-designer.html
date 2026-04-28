@@ -499,6 +499,50 @@ function generateLHSContinuous(factors, n) {
   return samples;
 }
 
+// ── D-Optimal helpers ──────────────────────────────────────────────────────
+
+/**
+ * Compute determinant and inverse of a small square matrix using Gauss-Jordan
+ * elimination with partial pivoting. Returns { det, inv } where inv is null
+ * and det is 0 if the matrix is singular (or near-singular within 1e-12).
+ *
+ * Sized for the small p × p (X'X) matrices used in D-Optimal (p ≤ 22 in this
+ * project). For these sizes, Gauss-Jordan is fast (~30 µs at p=11) and clearer
+ * than separate LU + back-substitution code.
+ */
+function detAndInverse(A) {
+  const n = A.length;
+  const M = A.map((row, i) => {
+    const aug = row.slice();
+    for (let j = 0; j < n; j++) aug.push(i === j ? 1 : 0);
+    return aug;
+  });
+  let det = 1;
+  for (let k = 0; k < n; k++) {
+    let maxAbs = Math.abs(M[k][k]);
+    let maxRow = k;
+    for (let i = k + 1; i < n; i++) {
+      if (Math.abs(M[i][k]) > maxAbs) { maxAbs = Math.abs(M[i][k]); maxRow = i; }
+    }
+    if (maxRow !== k) {
+      [M[k], M[maxRow]] = [M[maxRow], M[k]];
+      det = -det;
+    }
+    const pivot = M[k][k];
+    if (Math.abs(pivot) < 1e-12) return { det: 0, inv: null };
+    det *= pivot;
+    for (let j = 0; j < 2 * n; j++) M[k][j] /= pivot;
+    for (let i = 0; i < n; i++) {
+      if (i === k) continue;
+      const factor = M[i][k];
+      if (factor === 0) continue;
+      for (let j = 0; j < 2 * n; j++) M[i][j] -= factor * M[k][j];
+    }
+  }
+  const inv = M.map(row => row.slice(n));
+  return { det, inv };
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

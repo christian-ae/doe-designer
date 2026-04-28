@@ -29,11 +29,17 @@ const CHARGE_TERM_TYPES    = ['Voltage', 'Time', 'Energy Capacity', 'Charge Capa
 // ── Application state ──────────────────────────────────────────────────────
 const state = {
   factors: {
-    temperature:   { values: [] },
-    chargeLoad:    { values: [], unit: 'A' },
-    dischargeLoad: { values: [], unit: 'A' },
+    temperature:   { values: [], range: { min: null, max: null } },
+    chargeLoad:    { values: [], unit: 'A', range: { min: null, max: null } },
+    dischargeLoad: { values: [], unit: 'A', range: { min: null, max: null } },
     // Each combo: { dischargeType, dischargeValue, chargeType, chargeValue }
-    termination:   { combinations: [] },
+    termination: {
+      combinations: [],
+      range: {
+        discharge: { type: 'Voltage', min: null, max: null },
+        charge:    { type: 'Voltage', min: null, max: null },
+      },
+    },
   },
   method: 'fullFactorial',
   methodParams: {
@@ -41,7 +47,7 @@ const state = {
     orthogonalSubdivisions: 2,
   },
   repeats:        1,
-  inputMode:      'values', // 'values' | 'counts'
+  inputMode:      'counts', // 'values' | 'counts' | 'range'
   plotTab:        '3d',     // '3d' | '2d'
   highlightedRun: null,     // run number highlighted in parcoords, or null
   results:        null,
@@ -2182,12 +2188,12 @@ code {
 
       <!-- Input mode toggle -->
       <div class="mode-toggle" role="tablist" aria-label="Input mode">
-        <button type="button" class="mode-btn active" data-mode="values" role="tab">Exact values</button>
-        <button type="button" class="mode-btn" data-mode="counts" role="tab">Level counts</button>
+        <button type="button" class="mode-btn active" data-mode="counts" role="tab">Level counts</button>
+        <button type="button" class="mode-btn" data-mode="values" role="tab">Exact values</button>
       </div>
 
       <!-- ── Exact values mode ── -->
-      <div id="mode-values">
+      <div id="mode-values" class="hidden">
         <p class="section-hint">
           Enter comma-separated values for each factor (e.g. <code>5, 10, 25, 45</code>).
         </p>
@@ -2264,7 +2270,7 @@ code {
       </div>
 
       <!-- ── Level-counts mode ── -->
-      <div id="mode-counts" class="hidden">
+      <div id="mode-counts">
         <p class="section-hint">
           Specify the number of levels per factor. Values are just <code>1, 2, 3, …, N</code>
           — use this to gauge how many cells a given design size needs before committing to real values.

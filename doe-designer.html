@@ -543,6 +543,59 @@ function detAndInverse(A) {
   return { det, inv };
 }
 
+/**
+ * Returns the indices (into the canonical 4-factor list) of factors that have
+ * more than one level / value / combination — i.e. the factors that contribute
+ * meaningfully to the model. Held-constant factors are excluded.
+ *
+ * Canonical order: [temperature, chargeLoad, dischargeLoad, termination].
+ */
+function getActiveFactorIndices(factors) {
+  const lengths = [
+    factors.temperature.values.length,
+    factors.chargeLoad.values.length,
+    factors.dischargeLoad.values.length,
+    factors.termination.combinations.length,
+  ];
+  const active = [];
+  for (let i = 0; i < lengths.length; i++) {
+    if (lengths[i] > 1) active.push(i);
+  }
+  return active;
+}
+
+/**
+ * Build the Cartesian-product candidate set of all factor values. Each entry
+ * is a partial run object with the same shape that generateFullFactorial
+ * produces (so downstream display code works unchanged).
+ *
+ * For values mode, each entry includes both the raw `termCombo` object and
+ * the 1-indexed `termComboIndex`. Counts mode just uses level integers.
+ */
+function buildCandidateSet(factors) {
+  const temps = factors.temperature.values;
+  const cls   = factors.chargeLoad.values;
+  const dls   = factors.dischargeLoad.values;
+  const tcs   = factors.termination.combinations;
+  const out = [];
+  for (const t of temps) {
+    for (const cl of cls) {
+      for (const dl of dls) {
+        for (let ti = 0; ti < tcs.length; ti++) {
+          out.push({
+            temperature:    t,
+            chargeLoad:     cl,
+            dischargeLoad:  dl,
+            termCombo:      tcs[ti],
+            termComboIndex: ti + 1,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

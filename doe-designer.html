@@ -371,6 +371,50 @@ function generateOrthogonal(factors, M) {
   });
 }
 
+/**
+ * Continuous LHS sampler used in Range mode. For each active factor
+ * (range with min < max), shuffle [0..n-1] independently; sample i picks the
+ * permuted stratum index s for that factor and uses its midpoint as the
+ * value: lo + ((s + 0.5) / n) * (hi - lo). Held-constant factors (min == max)
+ * emit that single value on every run.
+ */
+function generateLHSContinuous(factors, n) {
+  const r = factors.termination.range;
+  const dims = [
+    { key: 'temperature',        lo: factors.temperature.range.min,    hi: factors.temperature.range.max    },
+    { key: 'chargeLoad',         lo: factors.chargeLoad.range.min,     hi: factors.chargeLoad.range.max     },
+    { key: 'dischargeLoad',      lo: factors.dischargeLoad.range.min,  hi: factors.dischargeLoad.range.max  },
+    { key: 'dischargeTermValue', lo: r.discharge.min,                  hi: r.discharge.max                  },
+    { key: 'chargeTermValue',    lo: r.charge.min,                     hi: r.charge.max                     },
+  ];
+
+  // Build per-dimension permutations only for active dims; held-constant dims need no permutation.
+  const perms = dims.map(d => {
+    const active = Number.isFinite(d.lo) && Number.isFinite(d.hi) && d.lo < d.hi;
+    return active ? fisherYates(Array.from({ length: n }, (_, i) => i)) : null;
+  });
+
+  const samples = [];
+  for (let i = 0; i < n; i++) {
+    const row = {
+      run:               i + 1,
+      dischargeTermType: r.discharge.type,
+      chargeTermType:    r.charge.type,
+    };
+    dims.forEach((d, k) => {
+      if (perms[k] === null) {
+        row[d.key] = d.lo;  // held constant (= hi)
+      } else {
+        const s = perms[k][i];
+        const u = (s + 0.5) / n;
+        row[d.key] = d.lo + u * (d.hi - d.lo);
+      }
+    });
+    samples.push(row);
+  }
+  return samples;
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

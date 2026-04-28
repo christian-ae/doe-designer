@@ -2424,6 +2424,23 @@ code {
   color: var(--gray-subtle);
   padding: 0 2px;
 }
+.range-term-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.range-term-stack > .range-term-type {
+  width: 100%;
+}
+.range-term-bounds {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.range-term-bounds .range-input {
+  flex: 1 1 80px;
+  min-width: 0;
+}
 
 .factor-input {
   flex: 1;
@@ -3177,40 +3194,44 @@ code {
         <!-- Discharge Termination -->
         <div class="factor-card">
           <label class="factor-label">Discharge Termination</label>
-          <div class="range-input-wrap">
-            <select id="input-range-disch-term-type" class="unit-select" aria-label="Discharge termination type">
+          <div class="range-input-wrap range-term-stack">
+            <select id="input-range-disch-term-type" class="unit-select range-term-type" aria-label="Discharge termination type">
               <option value="Voltage">Voltage</option>
               <option value="Time">Time</option>
               <option value="Energy Capacity">Energy Capacity</option>
               <option value="Charge Capacity">Charge Capacity</option>
               <option value="SOCmin">SOCmin</option>
             </select>
-            <input type="number" id="input-range-disch-term-min" class="factor-input range-input"
-                   placeholder="min" value="2.5" step="any" />
-            <span class="range-sep">to</span>
-            <input type="number" id="input-range-disch-term-max" class="factor-input range-input"
-                   placeholder="max" value="4.2" step="any" />
-            <span id="input-range-disch-term-unit" class="unit-label">V</span>
+            <div class="range-term-bounds">
+              <input type="number" id="input-range-disch-term-min" class="factor-input range-input"
+                     placeholder="min" value="2.5" step="any" />
+              <span class="range-sep">to</span>
+              <input type="number" id="input-range-disch-term-max" class="factor-input range-input"
+                     placeholder="max" value="4.2" step="any" />
+              <span id="input-range-disch-term-unit" class="unit-label">V</span>
+            </div>
           </div>
         </div>
 
         <!-- Charge Termination -->
         <div class="factor-card">
           <label class="factor-label">Charge Termination</label>
-          <div class="range-input-wrap">
-            <select id="input-range-chg-term-type" class="unit-select" aria-label="Charge termination type">
+          <div class="range-input-wrap range-term-stack">
+            <select id="input-range-chg-term-type" class="unit-select range-term-type" aria-label="Charge termination type">
               <option value="Voltage">Voltage</option>
               <option value="Time">Time</option>
               <option value="Energy Capacity">Energy Capacity</option>
               <option value="Charge Capacity">Charge Capacity</option>
               <option value="SOCmax">SOCmax</option>
             </select>
-            <input type="number" id="input-range-chg-term-min" class="factor-input range-input"
-                   placeholder="min" value="2.5" step="any" />
-            <span class="range-sep">to</span>
-            <input type="number" id="input-range-chg-term-max" class="factor-input range-input"
-                   placeholder="max" value="4.2" step="any" />
-            <span id="input-range-chg-term-unit" class="unit-label">V</span>
+            <div class="range-term-bounds">
+              <input type="number" id="input-range-chg-term-min" class="factor-input range-input"
+                     placeholder="min" value="2.5" step="any" />
+              <span class="range-sep">to</span>
+              <input type="number" id="input-range-chg-term-max" class="factor-input range-input"
+                     placeholder="max" value="4.2" step="any" />
+              <span id="input-range-chg-term-unit" class="unit-label">V</span>
+            </div>
           </div>
         </div>
       </div>

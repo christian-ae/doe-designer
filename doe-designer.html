@@ -373,13 +373,70 @@ function generateOrthogonal(factors, M) {
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
+/**
+ * Range-mode factor validation. Pushes user-facing error strings into errors[].
+ * Each factor must have both min and max as finite numbers with min <= max,
+ * and within type-specific bounds.
+ */
+function validateRangeFactors(f, errors) {
+  const checkBounds = (label, range, opts) => {
+    const { min, max } = range;
+    if (min === null || min === undefined || !Number.isFinite(min)) {
+      errors.push(`${label}: please enter a numeric minimum.`);
+      return;
+    }
+    if (max === null || max === undefined || !Number.isFinite(max)) {
+      errors.push(`${label}: please enter a numeric maximum.`);
+      return;
+    }
+    if (min > max) {
+      errors.push(`${label}: minimum (${min}) must be ≤ maximum (${max}).`);
+      return;
+    }
+    if (opts.absMin !== undefined && min < opts.absMin) {
+      errors.push(`${label}: minimum ${min} is below the allowed lower bound ${opts.absMin}${opts.unit ? ' ' + opts.unit : ''}.`);
+    }
+    if (opts.absMax !== undefined && max > opts.absMax) {
+      errors.push(`${label}: maximum ${max} is above the allowed upper bound ${opts.absMax}${opts.unit ? ' ' + opts.unit : ''}.`);
+    }
+  };
+
+  checkBounds('Temperature', f.temperature.range, {
+    absMin: TEMP_MIN_ABSOLUTE, absMax: TEMP_MAX_ABSOLUTE, unit: '°C',
+  });
+  checkBounds('Charge Load',    f.chargeLoad.range,    { absMin: 0 });
+  checkBounds('Discharge Load', f.dischargeLoad.range, { absMin: 0 });
+
+  const termOpts = type => {
+    if (type === 'SOCmin' || type === 'SOCmax') return { absMin: 0, absMax: 100, unit: '%' };
+    return { absMin: 0 };
+  };
+
+  const dRange = f.termination.range.discharge;
+  const cRange = f.termination.range.charge;
+  checkBounds(`Discharge Termination (${dRange.type})`, dRange, termOpts(dRange.type));
+  checkBounds(`Charge Termination (${cRange.type})`,    cRange, termOpts(cRange.type));
+
+  // Strict positivity check for non-SOC termination values
+  const strictPos = type => type !== 'SOCmin' && type !== 'SOCmax';
+  if (strictPos(dRange.type) && Number.isFinite(dRange.min) && dRange.min <= 0) {
+    errors.push(`Discharge Termination (${dRange.type}): minimum must be > 0.`);
+  }
+  if (strictPos(cRange.type) && Number.isFinite(cRange.min) && cRange.min <= 0) {
+    errors.push(`Charge Termination (${cRange.type}): minimum must be > 0.`);
+  }
+}
+
 function validateInputs() {
   const errors = [];
   const warnings = [];
   const f = state.factors;
   const isCounts = state.inputMode === 'counts';
+  const isRange  = state.inputMode === 'range';
 
-  if (isCounts) {
+  if (isRange) {
+    validateRangeFactors(f, errors);
+  } else if (isCounts) {
     const countChecks = [
       ['Temperature levels',   f.temperature.values.length],
       ['Charge load levels',   f.chargeLoad.values.length],
@@ -445,12 +502,24 @@ function validateInputs() {
     if (!Number.isInteger(M) || M < 2) {
       errors.push('Orthogonal Sampling: subdivisions per factor must be an integer ≥ 2.');
     } else {
-      const activeCount = [
-        f.temperature.values.length,
-        f.chargeLoad.values.length,
-        f.dischargeLoad.values.length,
-        f.termination.combinations.length,
-      ].filter(len => len > 1).length;
+      let activeCount;
+      if (isRange) {
+        const r = f.termination.range;
+        activeCount = [
+          [f.temperature.range.min,    f.temperature.range.max],
+          [f.chargeLoad.range.min,     f.chargeLoad.range.max],
+          [f.dischargeLoad.range.min,  f.dischargeLoad.range.max],
+          [r.discharge.min,            r.discharge.max],
+          [r.charge.min,               r.charge.max],
+        ].filter(([lo, hi]) => Number.isFinite(lo) && Number.isFinite(hi) && lo < hi).length;
+      } else {
+        activeCount = [
+          f.temperature.values.length,
+          f.chargeLoad.values.length,
+          f.dischargeLoad.values.length,
+          f.termination.combinations.length,
+        ].filter(len => len > 1).length;
+      }
       const N = activeCount === 0 ? 1 : Math.pow(M, activeCount);
       if (N > 10000) {
         errors.push(

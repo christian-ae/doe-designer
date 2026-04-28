@@ -41,13 +41,13 @@ const state = {
       },
     },
   },
-  method: 'fullFactorial',
+  method: 'lhs',
   methodParams: {
     samples:                20,
     orthogonalSubdivisions: 2,
   },
   repeats:        1,
-  inputMode:      'counts', // 'values' | 'counts' | 'range'
+  inputMode:      'range', // 'values' | 'counts' | 'range'
   plotTab:        '3d',     // '3d' | '2d'
   highlightedRun: null,     // run number highlighted in parcoords, or null
   results:        null,
@@ -2669,13 +2669,13 @@ code {
 
       <!-- Input mode toggle -->
       <div class="mode-toggle" role="tablist" aria-label="Input mode">
-        <button type="button" class="mode-btn" data-mode="range" role="tab">Range</button>
-        <button type="button" class="mode-btn active" data-mode="counts" role="tab">Level counts</button>
+        <button type="button" class="mode-btn active" data-mode="range" role="tab">Range</button>
+        <button type="button" class="mode-btn" data-mode="counts" role="tab">Level counts</button>
         <button type="button" class="mode-btn" data-mode="values" role="tab">Exact values</button>
       </div>
 
       <!-- ── Range mode ── -->
-      <div id="mode-range" class="hidden">
+      <div id="mode-range">
         <p class="section-hint">
           Specify min/max bounds per factor. LHS and Orthogonal Sampling will sample continuously within these ranges. Use Level counts mode for Full Factorial designs.
         </p>
@@ -2847,7 +2847,7 @@ code {
       </div>
 
       <!-- ── Level-counts mode ── -->
-      <div id="mode-counts">
+      <div id="mode-counts" class="hidden">
         <p class="section-hint">
           Specify the number of levels per factor. Values are just <code>1, 2, 3, …, N</code>
           — use this to gauge how many cells a given design size needs before committing to real values.
@@ -2897,11 +2897,11 @@ code {
 
       <div class="method-option">
         <label class="method-label">
-          <input type="radio" name="doe-method" id="radio-fullFactorial" value="fullFactorial" checked />
+          <input type="radio" name="doe-method" id="radio-fullFactorial" value="fullFactorial" />
           Full Factorial
         </label>
         <p class="method-disabled-hint">Available in Level counts and Exact values modes.</p>
-        <div class="method-extra" id="extra-fullFactorial">
+        <div class="method-extra hidden" id="extra-fullFactorial">
           <p class="method-extra-hint">
             Generates all combinations of your factor values. Total runs = product of all list lengths.
           </p>
@@ -2910,11 +2910,11 @@ code {
 
       <div class="method-option">
         <label class="method-label">
-          <input type="radio" name="doe-method" id="radio-lhs" value="lhs" />
+          <input type="radio" name="doe-method" id="radio-lhs" value="lhs" checked />
           Latin Hypercube Sampling
         </label>
         <p class="method-disabled-hint">Available in Range mode only.</p>
-        <div class="method-extra hidden" id="extra-lhs">
+        <div class="method-extra" id="extra-lhs">
           <div class="method-param-row">
             <label for="input-lhs-samples">Number of samples</label>
             <input type="number" id="input-lhs-samples" class="param-input" value="20" min="2" step="1" />

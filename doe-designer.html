@@ -666,6 +666,102 @@ function dOptimalParamCount(modelForm, activeCount) {
   return base + (activeCount * (activeCount - 1)) / 2;
 }
 
+/**
+ * Single-restart Fedorov exchange. Starts from a random distinct subset of
+ * candidate indices, then repeatedly swaps one current row out for a
+ * non-included candidate that maximises the Δ-criterion until no positive Δ
+ * is found.
+ *
+ * Returns { design, det } — the chosen indices and the final |X'X|. Returns
+ * { design: null, det: 0 } if every starting subset is singular.
+ *
+ * The Δ-criterion (closed form, derived from the rank-1 update of (X'X)):
+ *   Δ_ij = (1 + d_jj) * (1 - d_ii) + d_ij^2 - 1
+ * where d_ii = x_i' M^-1 x_i, d_jj = x_j' M^-1 x_j, d_ij = x_i' M^-1 x_j,
+ * and M = X'X for the current design. A swap improves |X'X| iff Δ > 0.
+ */
+function fedorovExchange(candidatesM, N) {
+  const C = candidatesM.length;
+  const p = candidatesM[0].length;
+  const MAX_ITER         = 100;
+  const MAX_SINGULAR     = 20;
+  const EPS              = 1e-9;
+  const SINGULAR_DET_EPS = 1e-12;
+
+  function pickRandomIndices() {
+    const all = Array.from({ length: C }, (_, i) => i);
+    fisherYates(all);
+    return all.slice(0, N);
+  }
+
+  function gramian(X) {
+    const G = Array.from({ length: p }, () => new Array(p).fill(0));
+    for (const row of X) {
+      for (let i = 0; i < p; i++) {
+        const ri = row[i];
+        for (let j = 0; j < p; j++) {
+          G[i][j] += ri * row[j];
+        }
+      }
+    }
+    return G;
+  }
+
+  function bilinear(x, Minv, y) {
+    let s = 0;
+    for (let i = 0; i < p; i++) {
+      let row = 0;
+      for (let k = 0; k < p; k++) row += Minv[i][k] * y[k];
+      s += x[i] * row;
+    }
+    return s;
+  }
+
+  let attempts = 0;
+  while (attempts < MAX_SINGULAR) {
+    const design = pickRandomIndices();
+    let X = design.map(i => candidatesM[i]);
+    let { det, inv } = detAndInverse(gramian(X));
+    if (Math.abs(det) < SINGULAR_DET_EPS || inv === null) { attempts++; continue; }
+
+    for (let iter = 0; iter < MAX_ITER; iter++) {
+      let bestDelta = EPS;
+      let bestI = -1, bestJ = -1;
+
+      const inDesign = new Set(design);
+      for (let i = 0; i < N; i++) {
+        const xi = X[i];
+        const d_ii = bilinear(xi, inv, xi);
+        for (let j = 0; j < C; j++) {
+          if (inDesign.has(j)) continue;
+          const xj = candidatesM[j];
+          const d_jj = bilinear(xj, inv, xj);
+          const d_ij = bilinear(xi, inv, xj);
+          const delta = (1 + d_jj) * (1 - d_ii) + d_ij * d_ij - 1;
+          if (delta > bestDelta) {
+            bestDelta = delta;
+            bestI = i;
+            bestJ = j;
+          }
+        }
+      }
+
+      if (bestI === -1) break;
+      design[bestI] = bestJ;
+      X[bestI] = candidatesM[bestJ];
+      const next = detAndInverse(gramian(X));
+      if (Math.abs(next.det) < SINGULAR_DET_EPS || next.inv === null) {
+        return { design: design.slice(), det };
+      }
+      det = next.det;
+      inv = next.inv;
+    }
+    return { design: design.slice(), det };
+  }
+
+  return { design: null, det: 0 };
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

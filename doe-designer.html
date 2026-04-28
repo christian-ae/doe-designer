@@ -45,8 +45,8 @@ const state = {
   methodParams: {
     samples:                20,
     orthogonalSubdivisions: 2,
-    dOptimalModel:          'main2fi',  // 'main' | 'main2fi'
-    dOptimalRuns:           17,         // user-editable; default = ceil(1.5 * paramCount)
+    iOptimalModel:          'main2fi',  // 'main' | 'main2fi'
+    iOptimalRuns:           17,         // user-editable; default = ceil(1.5 * paramCount)
   },
   repeats:        1,
   inputMode:      'range', // 'values' | 'counts' | 'range'
@@ -499,14 +499,14 @@ function generateLHSContinuous(factors, n) {
   return samples;
 }
 
-// ── D-Optimal helpers ──────────────────────────────────────────────────────
+// ── I-Optimal helpers ──────────────────────────────────────────────────────
 
 /**
  * Compute determinant and inverse of a small square matrix using Gauss-Jordan
  * elimination with partial pivoting. Returns { det, inv } where inv is null
  * and det is 0 if the matrix is singular (or near-singular within 1e-12).
  *
- * Sized for the small p × p (X'X) matrices used in D-Optimal (p ≤ 22 in this
+ * Sized for the small p × p (X'X) matrices used in I-Optimal (p ≤ 22 in this
  * project). For these sizes, Gauss-Jordan is fast (~30 µs at p=11) and clearer
  * than separate LU + back-substitution code.
  */
@@ -597,7 +597,7 @@ function buildCandidateSet(factors) {
 }
 
 /**
- * Encode a candidate row as one row of the model matrix used by D-Optimal.
+ * Encode a candidate row as one row of the model matrix used by I-Optimal.
  *
  * Numeric and ordinal-treated factors are min/max scaled to [-1, 1]:
  *   coded = 2 * (raw - min) / (max - min) - 1
@@ -660,7 +660,7 @@ function encodeAsModelMatrix(candidates, factors, modelForm, activeIdxs) {
 }
 
 /** Number of model parameters for the given config. */
-function dOptimalParamCount(modelForm, activeCount) {
+function iOptimalParamCount(modelForm, activeCount) {
   const base = 1 + activeCount;
   if (modelForm !== 'main2fi') return base;
   return base + (activeCount * (activeCount - 1)) / 2;
@@ -864,43 +864,44 @@ function fedorovExchange(candidatesM, N, criterion = 'D', W = null) {
 }
 
 /**
- * D-Optimal Design entry point. Runs five Fedorov-exchange restarts and
- * keeps the design with the largest |X'X|. Output rows match the existing
- * Full Factorial schema so renderTable / renderParCoords / downloadCSV /
- * computePlotAxis all work without modification.
+ * I-Optimal Design entry point. Runs five Fedorov-exchange restarts and
+ * keeps the design with the smallest trace((X'X)^-1 · W). Output rows match
+ * the existing Full Factorial schema so renderTable / renderParCoords /
+ * downloadCSV / computePlotAxis all work without modification.
  *
  * Throws an Error if every restart hits a singular start — caller should
  * surface this as a validation-style error.
  */
-function generateDOptimal(factors, modelForm, N) {
+function generateIOptimal(factors, modelForm, N) {
   const NUM_RESTARTS = 5;
 
   const activeIdxs = getActiveFactorIndices(factors);
   if (activeIdxs.length === 0) {
-    throw new Error('D-Optimal: at least one factor must have more than one level.');
+    throw new Error('I-Optimal: at least one factor must have more than one level.');
   }
   const C = buildCandidateSet(factors);
   if (N > C.length) {
-    throw new Error(`D-Optimal: requested ${N} runs exceeds the ${C.length} candidate points; D-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`);
+    throw new Error(`I-Optimal: requested ${N} runs exceeds the ${C.length} candidate points; I-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`);
   }
-  const p = dOptimalParamCount(modelForm, activeIdxs.length);
+  const p = iOptimalParamCount(modelForm, activeIdxs.length);
   if (N < p) {
-    throw new Error(`D-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}).`);
+    throw new Error(`I-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}).`);
   }
 
   const M = encodeAsModelMatrix(C, factors, modelForm, activeIdxs);
+  const W = computeMomentsMatrix(M);
 
   let bestDesign = null;
-  let bestDet    = -Infinity;
+  let bestTrace  = Infinity;
   for (let r = 0; r < NUM_RESTARTS; r++) {
-    const result = fedorovExchange(M, N);
-    if (result.design !== null && result.det > bestDet) {
+    const result = fedorovExchange(M, N, 'I', W);
+    if (result.design !== null && result.trace < bestTrace) {
       bestDesign = result.design;
-      bestDet    = result.det;
+      bestTrace  = result.trace;
     }
   }
   if (bestDesign === null) {
-    throw new Error('D-Optimal: could not find a non-singular starting design — try increasing run count or reducing model complexity.');
+    throw new Error('I-Optimal: could not find a non-singular starting design — try increasing run count or reducing model complexity.');
   }
 
   return bestDesign.map((idx, i) => ({
@@ -1075,19 +1076,19 @@ function validateInputs() {
     }
   }
 
-  if (state.method === 'dOptimal') {
-    const N = state.methodParams.dOptimalRuns;
+  if (state.method === 'iOptimal') {
+    const N = state.methodParams.iOptimalRuns;
     if (!Number.isInteger(N) || N < 1) {
-      errors.push('D-Optimal: number of runs must be a positive integer.');
+      errors.push('I-Optimal: number of runs must be a positive integer.');
     } else {
       const activeIdxs = getActiveFactorIndices(f);
       if (activeIdxs.length === 0) {
-        errors.push('D-Optimal: at least one factor must have more than one level.');
+        errors.push('I-Optimal: at least one factor must have more than one level.');
       } else {
-        const p = dOptimalParamCount(state.methodParams.dOptimalModel, activeIdxs.length);
+        const p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length);
         if (N < p) {
           errors.push(
-            `D-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}) — increase runs or switch to a smaller model.`
+            `I-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}) — increase runs or switch to a smaller model.`
           );
         }
         const candidateCount =
@@ -1097,16 +1098,16 @@ function validateInputs() {
           f.termination.combinations.length;
         if (N > candidateCount) {
           errors.push(
-            `D-Optimal: requested ${N} runs exceeds the ${candidateCount.toLocaleString()} candidate points; D-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`
+            `I-Optimal: requested ${N} runs exceeds the ${candidateCount.toLocaleString()} candidate points; I-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`
           );
         } else if (candidateCount > 0 && N > 0.5 * candidateCount) {
           warnings.push(
-            `D-Optimal: requested >50% of the candidate points (${N}/${candidateCount.toLocaleString()}) — at this density the design approaches full factorial. Consider reducing N or using Full Factorial.`
+            `I-Optimal: requested >50% of the candidate points (${N}/${candidateCount.toLocaleString()}) — at this density the design approaches full factorial. Consider reducing N or using Full Factorial.`
           );
         }
         if (N > 100) {
           warnings.push(
-            `D-Optimal: ${N} runs is large — consider whether a screening design (LHS in Range mode) would suit better.`
+            `I-Optimal: ${N} runs is large — consider whether a screening design (LHS in Range mode) would suit better.`
           );
         }
       }
@@ -1182,8 +1183,8 @@ function validateAndGenerate() {
     runs = isRange
       ? generateOrthogonalContinuous(f, state.methodParams.orthogonalSubdivisions)
       : generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
-  } else if (state.method === 'dOptimal') {
-    runs = generateDOptimal(f, state.methodParams.dOptimalModel, state.methodParams.dOptimalRuns);
+  } else if (state.method === 'iOptimal') {
+    runs = generateIOptimal(f, state.methodParams.iOptimalModel, state.methodParams.iOptimalRuns);
   }
 
   state.results        = runs;
@@ -1226,19 +1227,19 @@ function updateExperimentDisplays() {
 
   const modelFormShort = mf => mf === 'main2fi' ? 'main+2FI' : 'main';
   const modelFormLong  = mf => mf === 'main2fi' ? 'main effects + 2-factor interactions' : 'main effects only';
-  const dM = state.methodParams.dOptimalModel;
-  const dN = state.methodParams.dOptimalRuns;
+  const iM = state.methodParams.iOptimalModel;
+  const iN = state.methodParams.iOptimalRuns;
   const methodShort = {
     fullFactorial: 'Full Factorial',
     lhs:           'Latin Hypercube',
     orthogonal:    `Orthogonal M=${state.methodParams.orthogonalSubdivisions}`,
-    dOptimal:      `D-Optimal ${modelFormShort(dM)}, N=${dN}`,
+    iOptimal:      `I-Optimal ${modelFormShort(iM)}, N=${iN}`,
   };
   const methodLong = {
     fullFactorial: 'Full Factorial',
     lhs:           'Latin Hypercube Sampling',
     orthogonal:    `Orthogonal Sampling (M=${state.methodParams.orthogonalSubdivisions})`,
-    dOptimal:      `D-Optimal Design (${modelFormLong(dM)}, N=${dN})`,
+    iOptimal:      `I-Optimal Design (${modelFormLong(iM)}, N=${iN})`,
   };
 
   if (statRuns)    statRuns.textContent    = nRuns;
@@ -2043,15 +2044,15 @@ function updateOrthogonalBadge() {
 }
 
 /**
- * Recompute and display the D-Optimal info badge: candidate-set size,
+ * Recompute and display the I-Optimal info badge: candidate-set size,
  * parameter count, and minimum runs. Reads the active-factor count from
  * whichever input mode is active, mirroring updateOrthogonalBadge's
  * mode-aware reads.
  */
-function updateDOptimalBadge() {
-  const cEl   = document.getElementById('doptimal-candidate-count');
-  const pEl   = document.getElementById('doptimal-param-count');
-  const minEl = document.getElementById('doptimal-min-runs');
+function updateIOptimalBadge() {
+  const cEl   = document.getElementById('ioptimal-candidate-count');
+  const pEl   = document.getElementById('ioptimal-param-count');
+  const minEl = document.getElementById('ioptimal-min-runs');
   if (!cEl || !pEl || !minEl) return;
 
   // Sync first so we read the current values
@@ -2066,7 +2067,7 @@ function updateDOptimalBadge() {
     Math.max(f.dischargeLoad.values.length, 1) *
     Math.max(f.termination.combinations.length, 1);
   const activeIdxs = getActiveFactorIndices(f);
-  const p = dOptimalParamCount(state.methodParams.dOptimalModel, activeIdxs.length);
+  const p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length);
 
   cEl.textContent   = candidateCount.toLocaleString();
   pEl.textContent   = p.toString();
@@ -2077,7 +2078,7 @@ function updateDOptimalBadge() {
 
 /** Methods enabled in each input mode. */
 function getValidMethodsForMode(mode) {
-  return mode === 'range' ? ['lhs', 'orthogonal'] : ['fullFactorial', 'dOptimal'];
+  return mode === 'range' ? ['lhs', 'orthogonal'] : ['fullFactorial', 'iOptimal'];
 }
 
 /**
@@ -2176,36 +2177,36 @@ function init() {
     state.methodParams.samples = parseInt(e.target.value, 10);
   });
 
-  // D-Optimal — track whether the user has manually edited the run-count input,
+  // I-Optimal — track whether the user has manually edited the run-count input,
   // so model-form switches only auto-update the field if it's still at default.
-  let userEditedDOptimalRuns = false;
-  const dOptimalRunsEl = document.getElementById('input-doptimal-runs');
-  if (dOptimalRunsEl) {
-    dOptimalRunsEl.addEventListener('input', e => {
+  let userEditedIOptimalRuns = false;
+  const iOptimalRunsEl = document.getElementById('input-ioptimal-runs');
+  if (iOptimalRunsEl) {
+    iOptimalRunsEl.addEventListener('input', e => {
       const v = parseInt(e.target.value, 10);
-      state.methodParams.dOptimalRuns = Number.isInteger(v) ? v : 1;
-      userEditedDOptimalRuns = true;
+      state.methodParams.iOptimalRuns = Number.isInteger(v) ? v : 1;
+      userEditedIOptimalRuns = true;
     });
   }
 
-  // D-Optimal model-form radios
-  document.querySelectorAll('input[name="doptimal-model"]').forEach(radio => {
+  // I-Optimal model-form radios
+  document.querySelectorAll('input[name="ioptimal-model"]').forEach(radio => {
     radio.addEventListener('change', () => {
-      state.methodParams.dOptimalModel = radio.value;
-      updateDOptimalBadge();
+      state.methodParams.iOptimalModel = radio.value;
+      updateIOptimalBadge();
       // Auto-recompute the run-count default if user hasn't manually edited
-      if (!userEditedDOptimalRuns && dOptimalRunsEl) {
+      if (!userEditedIOptimalRuns && iOptimalRunsEl) {
         const activeIdxs = getActiveFactorIndices(state.factors);
-        const p = dOptimalParamCount(radio.value, activeIdxs.length);
+        const p = iOptimalParamCount(radio.value, activeIdxs.length);
         const newDefault = Math.ceil(1.5 * p);
-        state.methodParams.dOptimalRuns = newDefault;
-        dOptimalRunsEl.value = newDefault;
+        state.methodParams.iOptimalRuns = newDefault;
+        iOptimalRunsEl.value = newDefault;
       }
     });
   });
 
   // Run an initial badge update so the panel shows correct numbers when first opened
-  updateDOptimalBadge();
+  updateIOptimalBadge();
 
   // Orthogonal sampling — subdivisions per factor (M)
   const orthInput = document.getElementById('input-orthogonal-subdivisions');
@@ -2218,18 +2219,18 @@ function init() {
   }
 
   // The "total runs" badge depends on both M and on how many factors vary.
-  // Refresh it (and the D-Optimal badge) whenever any input in the left panel
+  // Refresh it (and the I-Optimal badge) whenever any input in the left panel
   // changes, or when combo rows are added/removed.
   const panel = document.querySelector('.panel');
   if (panel) panel.addEventListener('input', () => {
     updateOrthogonalBadge();
-    updateDOptimalBadge();
+    updateIOptimalBadge();
   });
   const comboList = document.getElementById('term-combo-list');
   if (comboList) {
     new MutationObserver(() => {
       updateOrthogonalBadge();
-      updateDOptimalBadge();
+      updateIOptimalBadge();
     }).observe(comboList, { childList: true });
   }
 
@@ -3519,29 +3520,29 @@ code {
 
       <div class="method-option">
         <label class="method-label">
-          <input type="radio" name="doe-method" id="radio-dOptimal" value="dOptimal" />
-          D-Optimal Design
+          <input type="radio" name="doe-method" id="radio-iOptimal" value="iOptimal" />
+          I-Optimal Design
         </label>
         <p class="method-disabled-hint">Available in Level counts and Exact values modes.</p>
-        <div class="method-extra hidden" id="extra-dOptimal">
+        <div class="method-extra hidden" id="extra-iOptimal">
           <div class="method-param-row">
             <label>Model form</label>
             <div class="model-form-group">
-              <label><input type="radio" name="doptimal-model" value="main" /> Main effects only</label>
-              <label><input type="radio" name="doptimal-model" value="main2fi" checked /> Main effects + 2-factor interactions</label>
+              <label><input type="radio" name="ioptimal-model" value="main" /> Main effects only</label>
+              <label><input type="radio" name="ioptimal-model" value="main2fi" checked /> Main effects + 2-factor interactions</label>
             </div>
           </div>
           <div class="method-param-row">
-            <label for="input-doptimal-runs">Number of runs</label>
-            <input type="number" id="input-doptimal-runs" class="param-input" value="17" min="1" step="1" />
+            <label for="input-ioptimal-runs">Number of runs</label>
+            <input type="number" id="input-ioptimal-runs" class="param-input" value="17" min="1" step="1" />
           </div>
           <p class="method-result-badge">
-            Candidate points: <strong id="doptimal-candidate-count">—</strong>
-            &nbsp;·&nbsp; Parameters: <strong id="doptimal-param-count">11</strong>
-            &nbsp;·&nbsp; Min runs: <strong id="doptimal-min-runs">11</strong>
+            Candidate points: <strong id="ioptimal-candidate-count">—</strong>
+            &nbsp;·&nbsp; Parameters: <strong id="ioptimal-param-count">11</strong>
+            &nbsp;·&nbsp; Min runs: <strong id="ioptimal-min-runs">11</strong>
           </p>
           <p class="method-extra-hint">
-            Algorithmically constructs a design that maximises |X'X| of the model matrix — useful when run count is fixed or the design space is irregular. Uses Fedorov exchange with 5 random restarts. Each Generate gives a fresh design.
+            Algorithmically constructs a design that minimises the average prediction variance over the candidate region — useful when run count is fixed and you care most about how well the design predicts within the region of interest. Uses Fedorov exchange with 5 random restarts. Each Generate gives a fresh design.
           </p>
         </div>
       </div>

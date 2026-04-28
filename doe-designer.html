@@ -1230,6 +1230,44 @@ function updateOrthogonalBadge() {
 
 // ── Mode switching ─────────────────────────────────────────────────────────
 
+/** Methods enabled in each input mode. */
+function getValidMethodsForMode(mode) {
+  return mode === 'range' ? ['lhs', 'orthogonal'] : ['fullFactorial'];
+}
+
+/**
+ * Walk the three method radios; disable any that aren't valid for the current
+ * input mode, collapse their detail panels, and auto-reselect a sensible
+ * default if the current selection just became invalid.
+ */
+function applyMethodAvailability() {
+  const valid = getValidMethodsForMode(state.inputMode);
+  const radios = document.querySelectorAll('input[name="doe-method"]');
+
+  radios.forEach(radio => {
+    const ok    = valid.includes(radio.value);
+    const card  = radio.closest('.method-option');
+    radio.disabled = !ok;
+    if (card) card.classList.toggle('method-disabled', !ok);
+    if (!ok) {
+      const extra = document.getElementById(`extra-${radio.value}`);
+      if (extra) extra.classList.add('hidden');
+    }
+  });
+
+  // If current method is no longer valid, auto-reselect.
+  if (!valid.includes(state.method)) {
+    const fallback = state.inputMode === 'range' ? 'lhs' : 'fullFactorial';
+    const radio    = document.getElementById(`radio-${fallback}`);
+    if (radio) {
+      radio.checked = true;
+      state.method  = fallback;
+      const extra = document.getElementById(`extra-${fallback}`);
+      if (extra) extra.classList.remove('hidden');
+    }
+  }
+}
+
 /**
  * Apply a new input mode: update state, button highlight, panel visibility,
  * method availability, and orthogonal badge. Single entry point used by both
@@ -1246,6 +1284,7 @@ function setInputMode(mode) {
   if (rangePanel)  rangePanel.classList.toggle('hidden',  mode !== 'range');
   if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
   if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
+  applyMethodAvailability();
   updateOrthogonalBadge();
 }
 
@@ -1260,6 +1299,9 @@ function init() {
       setInputMode(mode);
     });
   });
+
+  // Apply initial method availability for the default mode.
+  applyMethodAvailability();
 
   // Method radio buttons
   document.querySelectorAll('input[name="doe-method"]').forEach(radio => {
@@ -1766,6 +1808,24 @@ code {
   margin-bottom: 8px;
   overflow: hidden;
   background: #ffffff;
+}
+
+.method-option.method-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.method-option.method-disabled .method-label {
+  cursor: not-allowed;
+}
+.method-disabled-hint {
+  display: none;
+  font-size: 0.8rem;
+  color: var(--gray-subtle);
+  margin: 4px 0 0 0;
+  padding: 0 14px 8px 38px;
+}
+.method-option.method-disabled .method-disabled-hint {
+  display: block;
 }
 
 .method-label {
@@ -2451,6 +2511,7 @@ code {
           <input type="radio" name="doe-method" id="radio-fullFactorial" value="fullFactorial" checked />
           Full Factorial
         </label>
+        <p class="method-disabled-hint">Available in Level counts and Exact values modes.</p>
         <div class="method-extra" id="extra-fullFactorial">
           <p class="method-extra-hint">
             Generates all combinations of your factor values. Total runs = product of all list lengths.
@@ -2463,6 +2524,7 @@ code {
           <input type="radio" name="doe-method" id="radio-lhs" value="lhs" />
           Latin Hypercube Sampling
         </label>
+        <p class="method-disabled-hint">Available in Range mode only.</p>
         <div class="method-extra hidden" id="extra-lhs">
           <div class="method-param-row">
             <label for="input-lhs-samples">Number of samples</label>
@@ -2479,6 +2541,7 @@ code {
           <input type="radio" name="doe-method" id="radio-orthogonal" value="orthogonal" />
           Orthogonal Sampling
         </label>
+        <p class="method-disabled-hint">Available in Range mode only.</p>
         <div class="method-extra hidden" id="extra-orthogonal">
           <div class="method-param-row">
             <label for="input-orthogonal-subdivisions">Subdivisions per factor (M)</label>

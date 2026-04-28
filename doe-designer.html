@@ -1533,6 +1533,25 @@ code {
   gap: 8px;
 }
 
+.range-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.range-input-wrap .range-input {
+  flex: 1 1 80px;
+  min-width: 0;
+}
+.range-input-wrap .unit-select {
+  flex: 0 0 auto;
+}
+.range-sep {
+  font-size: 0.85rem;
+  color: var(--gray-subtle);
+  padding: 0 2px;
+}
+
 .factor-input {
   flex: 1;
   min-width: 0;
@@ -2190,6 +2209,101 @@ code {
       <div class="mode-toggle" role="tablist" aria-label="Input mode">
         <button type="button" class="mode-btn active" data-mode="counts" role="tab">Level counts</button>
         <button type="button" class="mode-btn" data-mode="values" role="tab">Exact values</button>
+      </div>
+
+      <!-- ── Range mode ── -->
+      <div id="mode-range" class="hidden">
+        <p class="section-hint">
+          Specify min/max bounds per factor. LHS and Orthogonal Sampling will sample continuously within these ranges. Use Level counts mode for Full Factorial designs.
+        </p>
+
+        <!-- Temperature -->
+        <div class="factor-card">
+          <label class="factor-label">Temperature</label>
+          <div class="range-input-wrap">
+            <input type="number" id="input-range-temp-min" class="factor-input range-input"
+                   placeholder="min" value="0" step="any" />
+            <span class="range-sep">to</span>
+            <input type="number" id="input-range-temp-max" class="factor-input range-input"
+                   placeholder="max" value="50" step="any" />
+            <span class="unit-label">°C</span>
+          </div>
+          <p class="field-hint">Valid range: −20 to 80 °C</p>
+        </div>
+
+        <!-- Charge Load -->
+        <div class="factor-card">
+          <label class="factor-label">Charge Load</label>
+          <div class="range-input-wrap">
+            <input type="number" id="input-range-charge-min" class="factor-input range-input"
+                   placeholder="min" value="0" step="any" />
+            <span class="range-sep">to</span>
+            <input type="number" id="input-range-charge-max" class="factor-input range-input"
+                   placeholder="max" value="5" step="any" />
+            <select id="input-range-charge-unit" class="unit-select" aria-label="Charge load unit">
+              <option value="A">A</option>
+              <option value="C">C-rate</option>
+              <option value="W">W</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Discharge Load -->
+        <div class="factor-card">
+          <label class="factor-label">Discharge Load</label>
+          <div class="range-input-wrap">
+            <input type="number" id="input-range-discharge-min" class="factor-input range-input"
+                   placeholder="min" value="0" step="any" />
+            <span class="range-sep">to</span>
+            <input type="number" id="input-range-discharge-max" class="factor-input range-input"
+                   placeholder="max" value="5" step="any" />
+            <select id="input-range-discharge-unit" class="unit-select" aria-label="Discharge load unit">
+              <option value="A">A</option>
+              <option value="C">C-rate</option>
+              <option value="W">W</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Discharge Termination -->
+        <div class="factor-card">
+          <label class="factor-label">Discharge Termination</label>
+          <div class="range-input-wrap">
+            <select id="input-range-disch-term-type" class="unit-select" aria-label="Discharge termination type">
+              <option value="Voltage">Voltage</option>
+              <option value="Time">Time</option>
+              <option value="Energy Capacity">Energy Capacity</option>
+              <option value="Charge Capacity">Charge Capacity</option>
+              <option value="SOCmin">SOCmin</option>
+            </select>
+            <input type="number" id="input-range-disch-term-min" class="factor-input range-input"
+                   placeholder="min" value="2.5" step="any" />
+            <span class="range-sep">to</span>
+            <input type="number" id="input-range-disch-term-max" class="factor-input range-input"
+                   placeholder="max" value="4.2" step="any" />
+            <span id="input-range-disch-term-unit" class="unit-label">V</span>
+          </div>
+        </div>
+
+        <!-- Charge Termination -->
+        <div class="factor-card">
+          <label class="factor-label">Charge Termination</label>
+          <div class="range-input-wrap">
+            <select id="input-range-chg-term-type" class="unit-select" aria-label="Charge termination type">
+              <option value="Voltage">Voltage</option>
+              <option value="Time">Time</option>
+              <option value="Energy Capacity">Energy Capacity</option>
+              <option value="Charge Capacity">Charge Capacity</option>
+              <option value="SOCmax">SOCmax</option>
+            </select>
+            <input type="number" id="input-range-chg-term-min" class="factor-input range-input"
+                   placeholder="min" value="2.5" step="any" />
+            <span class="range-sep">to</span>
+            <input type="number" id="input-range-chg-term-max" class="factor-input range-input"
+                   placeholder="max" value="4.2" step="any" />
+            <span id="input-range-chg-term-unit" class="unit-label">V</span>
+          </div>
+        </div>
       </div>
 
       <!-- ── Exact values mode ── -->

@@ -974,6 +974,44 @@ function validateInputs() {
     }
   }
 
+  if (state.method === 'dOptimal') {
+    const N = state.methodParams.dOptimalRuns;
+    if (!Number.isInteger(N) || N < 1) {
+      errors.push('D-Optimal: number of runs must be a positive integer.');
+    } else {
+      const activeIdxs = getActiveFactorIndices(f);
+      if (activeIdxs.length === 0) {
+        errors.push('D-Optimal: at least one factor must have more than one level.');
+      } else {
+        const p = dOptimalParamCount(state.methodParams.dOptimalModel, activeIdxs.length);
+        if (N < p) {
+          errors.push(
+            `D-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}) — increase runs or switch to a smaller model.`
+          );
+        }
+        const candidateCount =
+          f.temperature.values.length *
+          f.chargeLoad.values.length *
+          f.dischargeLoad.values.length *
+          f.termination.combinations.length;
+        if (N > candidateCount) {
+          errors.push(
+            `D-Optimal: requested ${N} runs exceeds the ${candidateCount.toLocaleString()} candidate points; D-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`
+          );
+        } else if (candidateCount > 0 && N > 0.5 * candidateCount) {
+          warnings.push(
+            `D-Optimal: requested >50% of the candidate points (${N}/${candidateCount.toLocaleString()}) — at this density the design approaches full factorial. Consider reducing N or using Full Factorial.`
+          );
+        }
+        if (N > 100) {
+          warnings.push(
+            `D-Optimal: ${N} runs is large — consider whether a screening design (LHS in Range mode) would suit better.`
+          );
+        }
+      }
+    }
+  }
+
   if (state.method === 'fullFactorial') {
     const lengths = [
       f.temperature.values.length,

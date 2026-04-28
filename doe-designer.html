@@ -1317,12 +1317,40 @@ function downloadCSV() {
   if (!state.results) return;
   const f        = state.factors;
   const isCounts = state.inputMode === 'counts';
+  const isRange  = state.inputMode === 'range';
 
   let header, makeRow;
 
   if (isCounts) {
     header  = ['Run', 'TemperatureLevel', 'ChargeLoadLevel', 'DischargeLoadLevel', 'TerminationLevel'].join(',');
     makeRow = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex].join(',');
+  } else if (isRange) {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    const dType      = f.termination.range.discharge.type;
+    const cType      = f.termination.range.charge.type;
+    const dUnit      = TERMINATION_UNITS[dType] || '';
+    const cUnit      = TERMINATION_UNITS[cType] || '';
+    header = [
+      'Run',
+      'Temperature_degC',
+      `ChargeLoad_${chargeUnit}`,
+      `DischargeLoad_${dischUnit}`,
+      'DischargeTermType',
+      `DischargeTermValue_${dUnit}`,
+      'ChargeTermType',
+      `ChargeTermValue_${cUnit}`,
+    ].join(',');
+    makeRow = r => [
+      r.run,
+      r.temperature,
+      r.chargeLoad,
+      r.dischargeLoad,
+      r.dischargeTermType,
+      r.dischargeTermValue,
+      r.chargeTermType,
+      r.chargeTermValue,
+    ].join(',');
   } else {
     const chargeUnit = f.chargeLoad.unit;
     const dischUnit  = f.dischargeLoad.unit;

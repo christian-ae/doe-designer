@@ -1434,6 +1434,29 @@ function countActiveOrthogonalFactors() {
       }).length;
   }
 
+  if (state.inputMode === 'range') {
+    const readNum = id => {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      const raw = el.value.trim();
+      if (raw === '') return null;
+      const v = parseFloat(raw);
+      return Number.isFinite(v) ? v : null;
+    };
+    const isActive = (loId, hiId) => {
+      const lo = readNum(loId);
+      const hi = readNum(hiId);
+      return Number.isFinite(lo) && Number.isFinite(hi) && lo < hi;
+    };
+    let active = 0;
+    if (isActive('input-range-temp-min',       'input-range-temp-max'))       active++;
+    if (isActive('input-range-charge-min',     'input-range-charge-max'))     active++;
+    if (isActive('input-range-discharge-min',  'input-range-discharge-max'))  active++;
+    if (isActive('input-range-disch-term-min', 'input-range-disch-term-max')) active++;
+    if (isActive('input-range-chg-term-min',   'input-range-chg-term-max'))   active++;
+    return active;
+  }
+
   let active = 0;
   const uniqueCount = id => {
     const el = document.getElementById(id);

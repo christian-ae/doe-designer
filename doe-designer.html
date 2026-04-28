@@ -762,6 +762,56 @@ function fedorovExchange(candidatesM, N) {
   return { design: null, det: 0 };
 }
 
+/**
+ * D-Optimal Design entry point. Runs five Fedorov-exchange restarts and
+ * keeps the design with the largest |X'X|. Output rows match the existing
+ * Full Factorial schema so renderTable / renderParCoords / downloadCSV /
+ * computePlotAxis all work without modification.
+ *
+ * Throws an Error if every restart hits a singular start — caller should
+ * surface this as a validation-style error.
+ */
+function generateDOptimal(factors, modelForm, N) {
+  const NUM_RESTARTS = 5;
+
+  const activeIdxs = getActiveFactorIndices(factors);
+  if (activeIdxs.length === 0) {
+    throw new Error('D-Optimal: at least one factor must have more than one level.');
+  }
+  const C = buildCandidateSet(factors);
+  if (N > C.length) {
+    throw new Error(`D-Optimal: requested ${N} runs exceeds the ${C.length} candidate points; D-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`);
+  }
+  const p = dOptimalParamCount(modelForm, activeIdxs.length);
+  if (N < p) {
+    throw new Error(`D-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}).`);
+  }
+
+  const M = encodeAsModelMatrix(C, factors, modelForm, activeIdxs);
+
+  let bestDesign = null;
+  let bestDet    = -Infinity;
+  for (let r = 0; r < NUM_RESTARTS; r++) {
+    const result = fedorovExchange(M, N);
+    if (result.design !== null && result.det > bestDet) {
+      bestDesign = result.design;
+      bestDet    = result.det;
+    }
+  }
+  if (bestDesign === null) {
+    throw new Error('D-Optimal: could not find a non-singular starting design — try increasing run count or reducing model complexity.');
+  }
+
+  return bestDesign.map((idx, i) => ({
+    run:            i + 1,
+    temperature:    C[idx].temperature,
+    chargeLoad:     C[idx].chargeLoad,
+    dischargeLoad:  C[idx].dischargeLoad,
+    termCombo:      C[idx].termCombo,
+    termComboIndex: C[idx].termComboIndex,
+  }));
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

@@ -1935,6 +1935,37 @@ function updateOrthogonalBadge() {
   }
 }
 
+/**
+ * Recompute and display the D-Optimal info badge: candidate-set size,
+ * parameter count, and minimum runs. Reads the active-factor count from
+ * whichever input mode is active, mirroring updateOrthogonalBadge's
+ * mode-aware reads.
+ */
+function updateDOptimalBadge() {
+  const cEl   = document.getElementById('doptimal-candidate-count');
+  const pEl   = document.getElementById('doptimal-param-count');
+  const minEl = document.getElementById('doptimal-min-runs');
+  if (!cEl || !pEl || !minEl) return;
+
+  // Sync first so we read the current values
+  if (state.inputMode === 'counts' || state.inputMode === 'values') {
+    syncStateFromDOM();
+  }
+
+  const f = state.factors;
+  const candidateCount =
+    Math.max(f.temperature.values.length, 1) *
+    Math.max(f.chargeLoad.values.length, 1) *
+    Math.max(f.dischargeLoad.values.length, 1) *
+    Math.max(f.termination.combinations.length, 1);
+  const activeIdxs = getActiveFactorIndices(f);
+  const p = dOptimalParamCount(state.methodParams.dOptimalModel, activeIdxs.length);
+
+  cEl.textContent   = candidateCount.toLocaleString();
+  pEl.textContent   = p.toString();
+  minEl.textContent = p.toString();
+}
+
 // ── Mode switching ─────────────────────────────────────────────────────────
 
 /** Methods enabled in each input mode. */
@@ -2038,6 +2069,37 @@ function init() {
     state.methodParams.samples = parseInt(e.target.value, 10);
   });
 
+  // D-Optimal — track whether the user has manually edited the run-count input,
+  // so model-form switches only auto-update the field if it's still at default.
+  let userEditedDOptimalRuns = false;
+  const dOptimalRunsEl = document.getElementById('input-doptimal-runs');
+  if (dOptimalRunsEl) {
+    dOptimalRunsEl.addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      state.methodParams.dOptimalRuns = Number.isInteger(v) ? v : 1;
+      userEditedDOptimalRuns = true;
+    });
+  }
+
+  // D-Optimal model-form radios
+  document.querySelectorAll('input[name="doptimal-model"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      state.methodParams.dOptimalModel = radio.value;
+      updateDOptimalBadge();
+      // Auto-recompute the run-count default if user hasn't manually edited
+      if (!userEditedDOptimalRuns && dOptimalRunsEl) {
+        const activeIdxs = getActiveFactorIndices(state.factors);
+        const p = dOptimalParamCount(radio.value, activeIdxs.length);
+        const newDefault = Math.ceil(1.5 * p);
+        state.methodParams.dOptimalRuns = newDefault;
+        dOptimalRunsEl.value = newDefault;
+      }
+    });
+  });
+
+  // Run an initial badge update so the panel shows correct numbers when first opened
+  updateDOptimalBadge();
+
   // Orthogonal sampling — subdivisions per factor (M)
   const orthInput = document.getElementById('input-orthogonal-subdivisions');
   if (orthInput) {
@@ -2049,13 +2111,19 @@ function init() {
   }
 
   // The "total runs" badge depends on both M and on how many factors vary.
-  // Refresh it whenever any input in the left panel changes, or when combo
-  // rows are added/removed.
+  // Refresh it (and the D-Optimal badge) whenever any input in the left panel
+  // changes, or when combo rows are added/removed.
   const panel = document.querySelector('.panel');
-  if (panel) panel.addEventListener('input', updateOrthogonalBadge);
+  if (panel) panel.addEventListener('input', () => {
+    updateOrthogonalBadge();
+    updateDOptimalBadge();
+  });
   const comboList = document.getElementById('term-combo-list');
   if (comboList) {
-    new MutationObserver(updateOrthogonalBadge).observe(comboList, { childList: true });
+    new MutationObserver(() => {
+      updateOrthogonalBadge();
+      updateDOptimalBadge();
+    }).observe(comboList, { childList: true });
   }
 
   // Charge unit

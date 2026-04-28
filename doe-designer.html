@@ -1104,6 +1104,7 @@ function renderPlots(runs) {
 function renderParCoords(runs) {
   const f        = state.factors;
   const isCounts = state.inputMode === 'counts';
+  const isRange  = state.inputMode === 'range';
 
   // Colour lines by run number for easy visual separation
   const runNums = runs.map(r => r.run);
@@ -1117,6 +1118,20 @@ function renderParCoords(runs) {
       { label: 'Charge Load',    values: runs.map(r => r.chargeLoad)     },
       { label: 'Discharge Load', values: runs.map(r => r.dischargeLoad)  },
       { label: 'Termination',    values: runs.map(r => r.termComboIndex) },
+    ];
+  } else if (isRange) {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    const dType      = f.termination.range.discharge.type;
+    const cType      = f.termination.range.charge.type;
+    const dUnit      = TERMINATION_UNITS[dType] || '';
+    const cUnit      = TERMINATION_UNITS[cType] || '';
+    dimensions = [
+      { label: 'Temperature (°C)',                values: runs.map(r => r.temperature)        },
+      { label: `Charge Load (${chargeUnit})`,     values: runs.map(r => r.chargeLoad)         },
+      { label: `Discharge Load (${dischUnit})`,   values: runs.map(r => r.dischargeLoad)      },
+      { label: `Disch. Term ${dType} (${dUnit})`, values: runs.map(r => r.dischargeTermValue) },
+      { label: `Chg. Term ${cType} (${cUnit})`,   values: runs.map(r => r.chargeTermValue)    },
     ];
   } else {
     const chargeUnit = f.chargeLoad.unit;

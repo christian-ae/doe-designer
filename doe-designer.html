@@ -1123,15 +1123,21 @@ function updateExperimentDisplays() {
   const nRuns  = state.results.length;
   const nCells = nRuns * state.repeats;
 
+  const modelFormShort = mf => mf === 'main2fi' ? 'main+2FI' : 'main';
+  const modelFormLong  = mf => mf === 'main2fi' ? 'main effects + 2-factor interactions' : 'main effects only';
+  const dM = state.methodParams.dOptimalModel;
+  const dN = state.methodParams.dOptimalRuns;
   const methodShort = {
     fullFactorial: 'Full Factorial',
     lhs:           'Latin Hypercube',
     orthogonal:    `Orthogonal M=${state.methodParams.orthogonalSubdivisions}`,
+    dOptimal:      `D-Optimal ${modelFormShort(dM)}, N=${dN}`,
   };
   const methodLong = {
     fullFactorial: 'Full Factorial',
     lhs:           'Latin Hypercube Sampling',
     orthogonal:    `Orthogonal Sampling (M=${state.methodParams.orthogonalSubdivisions})`,
+    dOptimal:      `D-Optimal Design (${modelFormLong(dM)}, N=${dN})`,
   };
 
   if (statRuns)    statRuns.textContent    = nRuns;

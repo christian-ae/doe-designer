@@ -53,6 +53,7 @@ const state = {
   plotTab:        '3d',     // '3d' | '2d'
   highlightedRun: null,     // run number highlighted in parcoords, or null
   results:        null,
+  iOptimalTrace:  null,     // populated by generateIOptimal; null otherwise
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -865,9 +866,15 @@ function fedorovExchange(candidatesM, N, criterion = 'D', W = null) {
 
 /**
  * I-Optimal Design entry point. Runs five Fedorov-exchange restarts and
- * keeps the design with the smallest trace((X'X)^-1 · W). Output rows match
- * the existing Full Factorial schema so renderTable / renderParCoords /
- * downloadCSV / computePlotAxis all work without modification.
+ * keeps the design with the smallest trace((X'X)^-1 · W).
+ *
+ * Returns { runs, trace }:
+ *   - runs:  Array of run objects matching the Full Factorial schema, so
+ *            renderTable / renderParCoords / downloadCSV / computePlotAxis
+ *            work without modification.
+ *   - trace: Final I-criterion value = trace((X'X)^-1 · W) for the chosen
+ *            design. Used to surface the average prediction variance in the
+ *            summary row.
  *
  * Throws an Error if every restart hits a singular start — caller should
  * surface this as a validation-style error.
@@ -904,7 +911,7 @@ function generateIOptimal(factors, modelForm, N) {
     throw new Error('I-Optimal: could not find a non-singular starting design — try increasing run count or reducing model complexity.');
   }
 
-  return bestDesign.map((idx, i) => ({
+  const runs = bestDesign.map((idx, i) => ({
     run:            i + 1,
     temperature:    C[idx].temperature,
     chargeLoad:     C[idx].chargeLoad,
@@ -912,6 +919,7 @@ function generateIOptimal(factors, modelForm, N) {
     termCombo:      C[idx].termCombo,
     termComboIndex: C[idx].termComboIndex,
   }));
+  return { runs, trace: bestTrace };
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────
@@ -1173,6 +1181,7 @@ function validateAndGenerate() {
   const f = state.factors;
   const isRange = state.inputMode === 'range';
   let runs;
+  state.iOptimalTrace = null;
   if (state.method === 'fullFactorial') {
     runs = generateFullFactorial(f);
   } else if (state.method === 'lhs') {
@@ -1184,7 +1193,9 @@ function validateAndGenerate() {
       ? generateOrthogonalContinuous(f, state.methodParams.orthogonalSubdivisions)
       : generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
   } else if (state.method === 'iOptimal') {
-    runs = generateIOptimal(f, state.methodParams.iOptimalModel, state.methodParams.iOptimalRuns);
+    const out = generateIOptimal(f, state.methodParams.iOptimalModel, state.methodParams.iOptimalRuns);
+    runs = out.runs;
+    state.iOptimalTrace = out.trace;
   }
 
   state.results        = runs;

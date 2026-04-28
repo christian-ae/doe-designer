@@ -867,6 +867,22 @@ function getVarOptions() {
       { key: 'termComboIndex', label: 'Termination level' },
     ];
   }
+  if (state.inputMode === 'range') {
+    const f          = state.factors;
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    const dType      = f.termination.range.discharge.type;
+    const cType      = f.termination.range.charge.type;
+    const dUnit      = TERMINATION_UNITS[dType] || '';
+    const cUnit      = TERMINATION_UNITS[cType] || '';
+    return [
+      { key: 'temperature',        label: 'Temperature (°C)' },
+      { key: 'chargeLoad',         label: `Charge Load (${chargeUnit})` },
+      { key: 'dischargeLoad',      label: `Discharge Load (${dischUnit})` },
+      { key: 'dischargeTermValue', label: `Discharge Term: ${dType} (${dUnit})` },
+      { key: 'chargeTermValue',    label: `Charge Term: ${cType} (${cUnit})` },
+    ];
+  }
   const chargeUnit = state.factors.chargeLoad.unit;
   const dischUnit  = state.factors.dischargeLoad.unit;
   return [

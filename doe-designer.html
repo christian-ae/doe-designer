@@ -45,6 +45,8 @@ const state = {
   methodParams: {
     samples:                20,
     orthogonalSubdivisions: 2,
+    dOptimalModel:          'main2fi',  // 'main' | 'main2fi'
+    dOptimalRuns:           17,         // user-editable; default = ceil(1.5 * paramCount)
   },
   repeats:        1,
   inputMode:      'range', // 'values' | 'counts' | 'range'

@@ -1334,6 +1334,20 @@ function setInputMode(mode) {
   updateOrthogonalBadge();
 }
 
+/**
+ * Update the unit-label suffix displayed next to a Range-mode termination
+ * row when its type dropdown changes (e.g. Voltage → V, SOCmin → %).
+ */
+function updateRangeTermUnitLabel(side) {
+  const isDisch = side === 'discharge';
+  const typeId  = isDisch ? 'input-range-disch-term-type' : 'input-range-chg-term-type';
+  const unitId  = isDisch ? 'input-range-disch-term-unit' : 'input-range-chg-term-unit';
+  const typeEl  = document.getElementById(typeId);
+  const unitEl  = document.getElementById(unitId);
+  if (!typeEl || !unitEl) return;
+  unitEl.textContent = TERMINATION_UNITS[typeEl.value] || '';
+}
+
 // ── Initialisation ─────────────────────────────────────────────────────────
 
 function init() {
@@ -1419,6 +1433,29 @@ function init() {
       const result = parseValueList(raw);
       document.getElementById(id).classList.toggle('invalid', result.invalid && raw.trim() !== '');
     });
+  });
+
+  // Range-mode termination type dropdowns — live unit-label updates
+  ['discharge', 'charge'].forEach(side => {
+    const typeId = side === 'discharge' ? 'input-range-disch-term-type' : 'input-range-chg-term-type';
+    const el = document.getElementById(typeId);
+    if (el) {
+      el.addEventListener('change', () => {
+        updateRangeTermUnitLabel(side);
+        // Update state too so getVarOptions / CSV pick up the new type immediately.
+        state.factors.termination.range[side].type = el.value;
+      });
+    }
+  });
+
+  // Range-mode load unit dropdowns — keep state.factors.*.unit in sync immediately
+  const rcUnit = document.getElementById('input-range-charge-unit');
+  if (rcUnit) rcUnit.addEventListener('change', e => {
+    state.factors.chargeLoad.unit = e.target.value;
+  });
+  const rdUnit = document.getElementById('input-range-discharge-unit');
+  if (rdUnit) rdUnit.addEventListener('change', e => {
+    state.factors.dischargeLoad.unit = e.target.value;
   });
 
   // 3D plot axis selectors — re-render on change

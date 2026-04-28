@@ -1114,6 +1114,47 @@ function downloadCSV() {
 // ── DOM synchronisation ────────────────────────────────────────────────────
 
 /**
+ * Range-mode sync: pull min/max bounds, unit selections, and termination
+ * type selections from the DOM into state. Blank inputs become null so
+ * validation can distinguish "not entered" from a literal zero.
+ */
+function syncStateFromRangeDOM() {
+  const readNum = id => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const raw = el.value.trim();
+    if (raw === '') return null;
+    const v = parseFloat(raw);
+    return Number.isFinite(v) ? v : null;
+  };
+  const readVal = id => {
+    const el = document.getElementById(id);
+    return el ? el.value : null;
+  };
+
+  const f = state.factors;
+
+  f.temperature.range.min   = readNum('input-range-temp-min');
+  f.temperature.range.max   = readNum('input-range-temp-max');
+
+  f.chargeLoad.range.min    = readNum('input-range-charge-min');
+  f.chargeLoad.range.max    = readNum('input-range-charge-max');
+  f.chargeLoad.unit         = readVal('input-range-charge-unit') || f.chargeLoad.unit;
+
+  f.dischargeLoad.range.min = readNum('input-range-discharge-min');
+  f.dischargeLoad.range.max = readNum('input-range-discharge-max');
+  f.dischargeLoad.unit      = readVal('input-range-discharge-unit') || f.dischargeLoad.unit;
+
+  f.termination.range.discharge.type = readVal('input-range-disch-term-type') || f.termination.range.discharge.type;
+  f.termination.range.discharge.min  = readNum('input-range-disch-term-min');
+  f.termination.range.discharge.max  = readNum('input-range-disch-term-max');
+
+  f.termination.range.charge.type = readVal('input-range-chg-term-type') || f.termination.range.charge.type;
+  f.termination.range.charge.min  = readNum('input-range-chg-term-min');
+  f.termination.range.charge.max  = readNum('input-range-chg-term-max');
+}
+
+/**
  * Counts-mode sync: each factor's values become [1..N] where N is a user-
  * supplied count. Termination "combos" become N placeholder objects so the
  * existing DoE generators / renderers work unchanged.
@@ -1143,6 +1184,11 @@ function syncStateFromCountsDOM() {
 function syncStateFromDOM() {
   if (state.inputMode === 'counts') {
     syncStateFromCountsDOM();
+    return;
+  }
+
+  if (state.inputMode === 'range') {
+    syncStateFromRangeDOM();
     return;
   }
 

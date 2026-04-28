@@ -795,12 +795,36 @@ function updateExperimentDisplays() {
 function renderTable(runs) {
   const f        = state.factors;
   const isCounts = state.inputMode === 'counts';
+  const isRange  = state.inputMode === 'range';
 
   let headers, getCells;
 
   if (isCounts) {
     headers = ['Run', 'Temperature', 'Charge Load', 'Discharge Load', 'Termination'];
     getCells = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex];
+  } else if (isRange) {
+    const chargeUnit = f.chargeLoad.unit;
+    const dischUnit  = f.dischargeLoad.unit;
+    const dType      = f.termination.range.discharge.type;
+    const cType      = f.termination.range.charge.type;
+    const dUnit      = TERMINATION_UNITS[dType] || '';
+    const cUnit      = TERMINATION_UNITS[cType] || '';
+    headers = [
+      'Run',
+      'Temperature (°C)',
+      `Charge Load (${chargeUnit})`,
+      `Discharge Load (${dischUnit})`,
+      `Discharge Term (${dType}, ${dUnit})`,
+      `Charge Term (${cType}, ${cUnit})`,
+    ];
+    getCells = r => [
+      r.run,
+      fmt(r.temperature),
+      fmt(r.chargeLoad),
+      fmt(r.dischargeLoad),
+      fmt(r.dischargeTermValue),
+      fmt(r.chargeTermValue),
+    ];
   } else {
     const chargeUnit = f.chargeLoad.unit;
     const dischUnit  = f.dischargeLoad.unit;

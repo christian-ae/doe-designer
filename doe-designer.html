@@ -596,6 +596,76 @@ function buildCandidateSet(factors) {
   return out;
 }
 
+/**
+ * Encode a candidate row as one row of the model matrix used by D-Optimal.
+ *
+ * Numeric and ordinal-treated factors are min/max scaled to [-1, 1]:
+ *   coded = 2 * (raw - min) / (max - min) - 1
+ *
+ * The termination factor is treated as numeric ordinal: its raw value is
+ * `termComboIndex` (1..L). Held-constant factors (only one level) contribute
+ * no column — their coded value would be 0 across all candidates.
+ *
+ * Returns a function that maps a candidate row to its encoded model-matrix
+ * row vector. The function captures the per-factor min/max so it doesn't
+ * recompute them per candidate.
+ */
+function makeRowEncoder(factors, modelForm, activeIdxs) {
+  const lists = [
+    factors.temperature.values,
+    factors.chargeLoad.values,
+    factors.dischargeLoad.values,
+    factors.termination.combinations.map((_, i) => i + 1),  // 1..L
+  ];
+  const rawAccessors = [
+    r => r.temperature,
+    r => r.chargeLoad,
+    r => r.dischargeLoad,
+    r => r.termComboIndex,
+  ];
+  const ranges = lists.map(l => {
+    const lo = Math.min(...l);
+    const hi = Math.max(...l);
+    return { lo, hi };
+  });
+  const code = (raw, idx) => {
+    const { lo, hi } = ranges[idx];
+    if (hi === lo) return 0;  // held constant — caller should skip this column
+    return 2 * (raw - lo) / (hi - lo) - 1;
+  };
+
+  return function encodeRow(candidate) {
+    const codedActive = activeIdxs.map(idx => code(rawAccessors[idx](candidate), idx));
+    const row = [1];  // intercept
+    for (const v of codedActive) row.push(v);
+    if (modelForm === 'main2fi') {
+      for (let i = 0; i < codedActive.length; i++) {
+        for (let j = i + 1; j < codedActive.length; j++) {
+          row.push(codedActive[i] * codedActive[j]);
+        }
+      }
+    }
+    return row;
+  };
+}
+
+/**
+ * Encode every candidate as a row of the model matrix. Returns an array of
+ * arrays, sized |C| × p. p = 1 + activeCount  for 'main',
+ *                       1 + activeCount + C(activeCount, 2)  for 'main2fi'.
+ */
+function encodeAsModelMatrix(candidates, factors, modelForm, activeIdxs) {
+  const encodeRow = makeRowEncoder(factors, modelForm, activeIdxs);
+  return candidates.map(encodeRow);
+}
+
+/** Number of model parameters for the given config. */
+function dOptimalParamCount(modelForm, activeCount) {
+  const base = 1 + activeCount;
+  if (modelForm !== 'main2fi') return base;
+  return base + (activeCount * (activeCount - 1)) / 2;
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 /**

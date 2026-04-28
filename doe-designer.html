@@ -3136,6 +3136,8 @@ code {
   padding-top: 6px;
 }
 .summary-stat.accent-green .summary-value { color: var(--green); }
+.summary-stat-iOptimal { display: none; }
+.plot-summary.show-variance .summary-stat-iOptimal { display: flex; }
 
 /* ── DoE conditions table ── */
 .table-cell {
@@ -3625,6 +3627,10 @@ code {
           <div class="summary-stat accent-green">
             <span class="summary-label">Total cells</span>
             <span class="summary-value" id="stat-cells">—</span>
+          </div>
+          <div class="summary-stat summary-stat-iOptimal">
+            <span class="summary-label">Avg. variance</span>
+            <span class="summary-value" id="stat-variance">—</span>
           </div>
           <div class="summary-stat">
             <span class="summary-label">Method</span>

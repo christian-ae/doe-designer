@@ -697,18 +697,24 @@ function computeMomentsMatrix(M) {
 /**
  * Single-restart Fedorov exchange. Starts from a random distinct subset of
  * candidate indices, then repeatedly swaps one current row out for a
- * non-included candidate that maximises the Δ-criterion until no positive Δ
- * is found.
+ * non-included candidate that improves the chosen criterion.
  *
- * Returns { design, det } — the chosen indices and the final |X'X|. Returns
- * { design: null, det: 0 } if every starting subset is singular.
+ * - criterion 'D': maximises |X'X|.   Δ = (1+α_j)(1−α_i) + γ² − 1, want Δ > 0.
+ * - criterion 'I': minimises trace((X'X)^-1 · W).
+ *     Δ = η_i/(1−α_i) − v²/denom, want Δ < 0.
+ *     v² = η_j + 2ρ·η_ij + ρ²·η_i,  ρ = γ/(1−α_i),
+ *     denom = 1 + α_j + γ²/(1−α_i),
+ *     η_i = x_i'·B·x_i, η_j = x_j'·B·x_j, η_ij = x_i'·B·x_j, B = A·W·A.
  *
- * The Δ-criterion (closed form, derived from the rank-1 update of (X'X)):
- *   Δ_ij = (1 + d_jj) * (1 - d_ii) + d_ij^2 - 1
- * where d_ii = x_i' M^-1 x_i, d_jj = x_j' M^-1 x_j, d_ij = x_i' M^-1 x_j,
- * and M = X'X for the current design. A swap improves |X'X| iff Δ > 0.
+ * W is required when criterion === 'I' (passed in from the caller, computed
+ * once per Generate). Ignored when criterion === 'D'.
+ *
+ * Returns { design, det, trace }:
+ *   - design: array of N candidate indices (or null on every-restart-singular)
+ *   - det:    final |X'X| (always populated)
+ *   - trace:  final trace((X'X)^-1 · W) (populated only for criterion 'I')
  */
-function fedorovExchange(candidatesM, N) {
+function fedorovExchange(candidatesM, N, criterion = 'D', W = null) {
   const C = candidatesM.length;
   const p = candidatesM[0].length;
   const MAX_ITER         = 100;
@@ -735,14 +741,47 @@ function fedorovExchange(candidatesM, N) {
     return G;
   }
 
-  function bilinear(x, Minv, y) {
+  // x' M y  for vectors x, y and p × p matrix M
+  function bilinear(x, M, y) {
     let s = 0;
     for (let i = 0; i < p; i++) {
       let row = 0;
-      for (let k = 0; k < p; k++) row += Minv[i][k] * y[k];
+      for (let k = 0; k < p; k++) row += M[i][k] * y[k];
       s += x[i] * row;
     }
     return s;
+  }
+
+  // Compute B = A · W · A (only used for criterion 'I'). Returns p × p.
+  function computeB(A, W) {
+    const AW = Array.from({ length: p }, () => new Array(p).fill(0));
+    for (let i = 0; i < p; i++) {
+      for (let k = 0; k < p; k++) {
+        const aik = A[i][k];
+        if (aik === 0) continue;
+        for (let j = 0; j < p; j++) AW[i][j] += aik * W[k][j];
+      }
+    }
+    const B = Array.from({ length: p }, () => new Array(p).fill(0));
+    for (let i = 0; i < p; i++) {
+      for (let k = 0; k < p; k++) {
+        const ak = AW[i][k];
+        if (ak === 0) continue;
+        for (let j = 0; j < p; j++) B[i][j] += ak * A[k][j];
+      }
+    }
+    return B;
+  }
+
+  // trace(A · W) — used only for criterion 'I' to report the final value
+  function traceProd(A, W) {
+    let t = 0;
+    for (let i = 0; i < p; i++) {
+      let s = 0;
+      for (let k = 0; k < p; k++) s += A[i][k] * W[k][i];
+      t += s;
+    }
+    return t;
   }
 
   let attempts = 0;
@@ -753,23 +792,54 @@ function fedorovExchange(candidatesM, N) {
     if (Math.abs(det) < SINGULAR_DET_EPS || inv === null) { attempts++; continue; }
 
     for (let iter = 0; iter < MAX_ITER; iter++) {
-      let bestDelta = EPS;
+      let bestDelta;
       let bestI = -1, bestJ = -1;
 
       const inDesign = new Set(design);
-      for (let i = 0; i < N; i++) {
-        const xi = X[i];
-        const d_ii = bilinear(xi, inv, xi);
-        for (let j = 0; j < C; j++) {
-          if (inDesign.has(j)) continue;
-          const xj = candidatesM[j];
-          const d_jj = bilinear(xj, inv, xj);
-          const d_ij = bilinear(xi, inv, xj);
-          const delta = (1 + d_jj) * (1 - d_ii) + d_ij * d_ij - 1;
-          if (delta > bestDelta) {
-            bestDelta = delta;
-            bestI = i;
-            bestJ = j;
+
+      if (criterion === 'D') {
+        bestDelta = EPS;
+        for (let i = 0; i < N; i++) {
+          const xi = X[i];
+          const d_ii = bilinear(xi, inv, xi);
+          for (let j = 0; j < C; j++) {
+            if (inDesign.has(j)) continue;
+            const xj = candidatesM[j];
+            const d_jj = bilinear(xj, inv, xj);
+            const d_ij = bilinear(xi, inv, xj);
+            const delta = (1 + d_jj) * (1 - d_ii) + d_ij * d_ij - 1;
+            if (delta > bestDelta) {
+              bestDelta = delta;
+              bestI = i;
+              bestJ = j;
+            }
+          }
+        }
+      } else {
+        // criterion === 'I'
+        const B = computeB(inv, W);
+        bestDelta = -EPS;
+        for (let i = 0; i < N; i++) {
+          const xi = X[i];
+          const alpha_i = bilinear(xi, inv, xi);
+          if (1 - alpha_i <= SINGULAR_DET_EPS) continue;
+          const eta_i = bilinear(xi, B, xi);
+          for (let j = 0; j < C; j++) {
+            if (inDesign.has(j)) continue;
+            const xj = candidatesM[j];
+            const alpha_j = bilinear(xj, inv, xj);
+            const gamma   = bilinear(xi, inv, xj);
+            const eta_j   = bilinear(xj, B, xj);
+            const eta_ij  = bilinear(xi, B, xj);
+            const rho     = gamma / (1 - alpha_i);
+            const v2      = eta_j + 2 * rho * eta_ij + rho * rho * eta_i;
+            const denom   = 1 + alpha_j + (gamma * gamma) / (1 - alpha_i);
+            const delta   = eta_i / (1 - alpha_i) - v2 / denom;
+            if (delta < bestDelta) {
+              bestDelta = delta;
+              bestI = i;
+              bestJ = j;
+            }
           }
         }
       }
@@ -779,15 +849,18 @@ function fedorovExchange(candidatesM, N) {
       X[bestI] = candidatesM[bestJ];
       const next = detAndInverse(gramian(X));
       if (Math.abs(next.det) < SINGULAR_DET_EPS || next.inv === null) {
-        return { design: design.slice(), det };
+        const trace = (criterion === 'I' && next.inv !== null) ? traceProd(next.inv, W) : 0;
+        return { design: design.slice(), det: next.det, trace };
       }
       det = next.det;
       inv = next.inv;
     }
-    return { design: design.slice(), det };
+
+    const trace = criterion === 'I' ? traceProd(inv, W) : 0;
+    return { design: design.slice(), det, trace };
   }
 
-  return { design: null, det: 0 };
+  return { design: null, det: 0, trace: 0 };
 }
 
 /**

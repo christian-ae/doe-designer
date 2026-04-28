@@ -716,13 +716,18 @@ function validateAndGenerate() {
   }
 
   const f = state.factors;
+  const isRange = state.inputMode === 'range';
   let runs;
   if (state.method === 'fullFactorial') {
     runs = generateFullFactorial(f);
   } else if (state.method === 'lhs') {
-    runs = generateLHS(f, state.methodParams.samples);
+    runs = isRange
+      ? generateLHSContinuous(f, state.methodParams.samples)
+      : generateLHS(f, state.methodParams.samples);
   } else {
-    runs = generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
+    runs = isRange
+      ? generateOrthogonalContinuous(f, state.methodParams.orthogonalSubdivisions)
+      : generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
   }
 
   state.results        = runs;

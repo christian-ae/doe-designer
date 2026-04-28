@@ -1228,6 +1228,27 @@ function updateOrthogonalBadge() {
   }
 }
 
+// ── Mode switching ─────────────────────────────────────────────────────────
+
+/**
+ * Apply a new input mode: update state, button highlight, panel visibility,
+ * method availability, and orthogonal badge. Single entry point used by both
+ * the init wiring and any future programmatic mode changes.
+ */
+function setInputMode(mode) {
+  state.inputMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === mode)
+  );
+  const rangePanel  = document.getElementById('mode-range');
+  const valuesPanel = document.getElementById('mode-values');
+  const countsPanel = document.getElementById('mode-counts');
+  if (rangePanel)  rangePanel.classList.toggle('hidden',  mode !== 'range');
+  if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
+  if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
+  updateOrthogonalBadge();
+}
+
 // ── Initialisation ─────────────────────────────────────────────────────────
 
 function init() {
@@ -1236,17 +1257,7 @@ function init() {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
       if (mode !== 'range' && mode !== 'values' && mode !== 'counts') return;
-      state.inputMode = mode;
-      document.querySelectorAll('.mode-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.mode === mode)
-      );
-      const rangePanel  = document.getElementById('mode-range');
-      const valuesPanel = document.getElementById('mode-values');
-      const countsPanel = document.getElementById('mode-counts');
-      if (rangePanel)  rangePanel.classList.toggle('hidden',  mode !== 'range');
-      if (valuesPanel) valuesPanel.classList.toggle('hidden', mode !== 'values');
-      if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
-      updateOrthogonalBadge();
+      setInputMode(mode);
     });
   });
 

@@ -2947,6 +2947,35 @@ code {
           </p>
         </div>
       </div>
+
+      <div class="method-option">
+        <label class="method-label">
+          <input type="radio" name="doe-method" id="radio-dOptimal" value="dOptimal" />
+          D-Optimal Design
+        </label>
+        <p class="method-disabled-hint">Available in Level counts and Exact values modes.</p>
+        <div class="method-extra hidden" id="extra-dOptimal">
+          <div class="method-param-row">
+            <label>Model form</label>
+            <div class="model-form-group">
+              <label><input type="radio" name="doptimal-model" value="main" /> Main effects only</label>
+              <label><input type="radio" name="doptimal-model" value="main2fi" checked /> Main effects + 2-factor interactions</label>
+            </div>
+          </div>
+          <div class="method-param-row">
+            <label for="input-doptimal-runs">Number of runs</label>
+            <input type="number" id="input-doptimal-runs" class="param-input" value="17" min="1" step="1" />
+          </div>
+          <p class="method-result-badge">
+            Candidate points: <strong id="doptimal-candidate-count">—</strong>
+            &nbsp;·&nbsp; Parameters: <strong id="doptimal-param-count">11</strong>
+            &nbsp;·&nbsp; Min runs: <strong id="doptimal-min-runs">11</strong>
+          </p>
+          <p class="method-extra-hint">
+            Algorithmically constructs a design that maximises |X'X| of the model matrix — useful when run count is fixed or the design space is irregular. Uses Fedorov exchange with 5 random restarts. Each Generate gives a fresh design.
+          </p>
+        </div>
+      </div>
     </div>
 
     <!-- EXPERIMENT -->

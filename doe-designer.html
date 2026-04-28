@@ -667,6 +667,34 @@ function dOptimalParamCount(modelForm, activeCount) {
 }
 
 /**
+ * Build the moments matrix W = (1/|C|) · M' · M for the I-optimal criterion.
+ * W is the candidate-set average of f(c)·f(c)' across the full candidate
+ * model matrix M (|C| × p). Used as the discrete approximation of the
+ * integrated prediction-variance integral.
+ *
+ * Returns a p × p symmetric positive-semidefinite matrix.
+ */
+function computeMomentsMatrix(M) {
+  const C = M.length;
+  const p = M[0].length;
+  const W = Array.from({ length: p }, () => new Array(p).fill(0));
+  for (const row of M) {
+    for (let i = 0; i < p; i++) {
+      const ri = row[i];
+      for (let j = 0; j < p; j++) {
+        W[i][j] += ri * row[j];
+      }
+    }
+  }
+  for (let i = 0; i < p; i++) {
+    for (let j = 0; j < p; j++) {
+      W[i][j] /= C;
+    }
+  }
+  return W;
+}
+
+/**
  * Single-restart Fedorov exchange. Starts from a random distinct subset of
  * candidate indices, then repeatedly swaps one current row out for a
  * non-included candidate that maximises the Δ-criterion until no positive Δ

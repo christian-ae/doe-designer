@@ -53,7 +53,9 @@ const state = {
   inputMode:      'range', // 'values' | 'counts' | 'range'
   plotTab:        '3d',     // '3d' | '2d'
   highlightedRun: null,     // run number highlighted in parcoords, or null
-  results:        null,
+  results:        null,     // generated runs only (algorithmic output)
+  manualRuns:     [],       // user-added rows; persist across regenerates
+  manualIdSeq:    0,        // monotonic counter for stable manual row IDs
   iOptimalTrace:  null,     // populated by generateIOptimal; null otherwise
 };
 
@@ -1380,14 +1382,7 @@ function validateAndGenerate() {
   state.results        = runs;
   state.highlightedRun = null;
 
-  document.getElementById('results').classList.remove('hidden');
-
-  updateExperimentDisplays();
-
-  renderTable(runs);
-  renderPlots(runs);
-  renderParCoords(runs);
-
+  refreshAllResults();
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -1406,7 +1401,7 @@ function updateExperimentDisplays() {
   const plotSummary    = document.querySelector('.plot-summary');
   const resultsSummary = document.getElementById('results-summary');
 
-  if (!state.results) {
+  if (!hasAnyRuns()) {
     [statRuns, statRepeats, statCells, statVariance, statMethod].forEach(el => {
       if (el) el.textContent = '—';
     });
@@ -1415,8 +1410,9 @@ function updateExperimentDisplays() {
     return;
   }
 
-  const nRuns  = state.results.length;
-  const nCells = nRuns * state.repeats;
+  const combined = getCombinedRuns();
+  const nRuns    = combined.length;
+  const nCells   = nRuns * state.repeats;
 
   const modelFormShort = mf => {
     if (mf === 'main2fi')      return 'main+2FI';
@@ -1464,6 +1460,129 @@ function updateExperimentDisplays() {
   }
 }
 
+// ── Manual rows ────────────────────────────────────────────────────────────
+
+/** True when any rows exist from either source. */
+function hasAnyRuns() {
+  return (state.results && state.results.length > 0)
+      || (state.manualRuns && state.manualRuns.length > 0);
+}
+
+/**
+ * Generated rows + manual rows in display order, each tagged with `source` and
+ * renumbered with sequential `run` indices. Plot/table/CSV consumers always go
+ * through this — manual rows persist across regenerates and always come after
+ * the latest generated set.
+ */
+function getCombinedRuns() {
+  const gen = (state.results || []).map(r => ({ ...r, source: 'generated' }));
+  const man = (state.manualRuns || []).map(r => ({ ...r, source: 'manual' }));
+  return [...gen, ...man].map((r, i) => ({ ...r, run: i + 1 }));
+}
+
+/**
+ * Build a sensible default manual row for the current input mode. Schema must
+ * match what the existing generators emit for that mode so plotters / CSV /
+ * table renderers don't need a separate code path.
+ */
+function makeDefaultManualRow() {
+  const f  = state.factors;
+  const id = ++state.manualIdSeq;
+  const mid = (lo, hi) => (Number.isFinite(lo) && Number.isFinite(hi)) ? (lo + hi) / 2 : 0;
+  const first = arr => (arr && arr.length > 0) ? arr[0] : 0;
+
+  if (state.inputMode === 'counts') {
+    return {
+      manualId: id,
+      temperature:    1,
+      chargeLoad:     1,
+      dischargeLoad:  1,
+      termComboIndex: 1,
+      termCombo:      f.termination.combinations[0] || null,
+    };
+  }
+  if (state.inputMode === 'range') {
+    const r = f.termination.range;
+    return {
+      manualId: id,
+      temperature:        mid(f.temperature.range.min, f.temperature.range.max),
+      chargeLoad:         mid(f.chargeLoad.range.min,  f.chargeLoad.range.max),
+      dischargeLoad:      mid(f.dischargeLoad.range.min, f.dischargeLoad.range.max),
+      dischargeTermType:  r.discharge.type,
+      dischargeTermValue: mid(r.discharge.min, r.discharge.max),
+      chargeTermType:     r.charge.type,
+      chargeTermValue:    mid(r.charge.min, r.charge.max),
+    };
+  }
+  // values mode
+  return {
+    manualId: id,
+    temperature:    first(f.temperature.values),
+    chargeLoad:     first(f.chargeLoad.values),
+    dischargeLoad:  first(f.dischargeLoad.values),
+    termComboIndex: 1,
+    termCombo:      f.termination.combinations[0] || null,
+  };
+}
+
+/** Re-render everything that depends on the run set. */
+function refreshAllResults() {
+  const combined = getCombinedRuns();
+  const resultsEl = document.getElementById('results');
+  const emptyEl   = document.getElementById('emptyState');
+  if (hasAnyRuns()) {
+    if (resultsEl) resultsEl.classList.remove('hidden');
+    if (emptyEl)   emptyEl.classList.add('hidden');
+  } else {
+    if (resultsEl) resultsEl.classList.add('hidden');
+    if (emptyEl)   emptyEl.classList.remove('hidden');
+  }
+  updateExperimentDisplays();
+  if (combined.length > 0) {
+    renderTable(combined);
+    renderPlots(combined);
+    renderParCoords(combined);
+  }
+}
+
+/** Append a fresh manual row and refresh. */
+function addManualRow() {
+  state.manualRuns.push(makeDefaultManualRow());
+  refreshAllResults();
+}
+
+/** Remove a manual row by manualId and refresh. */
+function deleteManualRow(manualId) {
+  state.manualRuns = state.manualRuns.filter(r => r.manualId !== manualId);
+  refreshAllResults();
+}
+
+/**
+ * Update a single field on the manual row identified by manualId. Coerces
+ * numeric fields via parseFloat; for termComboIndex it also refreshes the
+ * stashed termCombo object so plotters/CSV stay coherent.
+ */
+function updateManualRowField(manualId, field, rawValue) {
+  const row = state.manualRuns.find(r => r.manualId === manualId);
+  if (!row) return;
+  const numericFields = new Set([
+    'temperature', 'chargeLoad', 'dischargeLoad',
+    'dischargeTermValue', 'chargeTermValue',
+    'termComboIndex',
+  ]);
+  if (numericFields.has(field)) {
+    const v = parseFloat(rawValue);
+    row[field] = Number.isFinite(v) ? v : 0;
+    if (field === 'termComboIndex') {
+      const combos = state.factors.termination.combinations;
+      row.termCombo = combos[row[field] - 1] || null;
+    }
+  } else {
+    row[field] = rawValue;
+  }
+  refreshAllResults();
+}
+
 // ── Table rendering ────────────────────────────────────────────────────────
 
 function renderTable(runs) {
@@ -1471,11 +1590,18 @@ function renderTable(runs) {
   const isCounts = state.inputMode === 'counts';
   const isRange  = state.inputMode === 'range';
 
-  let headers, getCells;
+  // Schema = ordered list of column definitions:
+  //   { header: string, field?: string, kind: 'text'|'number'|'comboSelect'|'static',
+  //     get: (r) => display value (text mode), readOnly?: bool }
+  let schema;
 
   if (isCounts) {
-    headers = ['Run', 'Temperature', 'Charge Load', 'Discharge Load', 'Termination'];
-    getCells = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex];
+    schema = [
+      { header: 'Temperature',    field: 'temperature',    kind: 'number', get: r => r.temperature },
+      { header: 'Charge Load',    field: 'chargeLoad',     kind: 'number', get: r => r.chargeLoad },
+      { header: 'Discharge Load', field: 'dischargeLoad',  kind: 'number', get: r => r.dischargeLoad },
+      { header: 'Termination',    field: 'termComboIndex', kind: 'comboSelect', get: r => r.termComboIndex },
+    ];
   } else if (isRange) {
     const chargeUnit = f.chargeLoad.unit;
     const dischUnit  = f.dischargeLoad.unit;
@@ -1483,49 +1609,40 @@ function renderTable(runs) {
     const cType      = f.termination.range.charge.type;
     const dUnit      = TERMINATION_UNITS[dType] || '';
     const cUnit      = TERMINATION_UNITS[cType] || '';
-    headers = [
-      'Run',
-      'Temperature (°C)',
-      `Charge Load (${chargeUnit})`,
-      `Discharge Load (${dischUnit})`,
-      `Discharge Term (${dType}, ${dUnit})`,
-      `Charge Term (${cType}, ${cUnit})`,
-    ];
-    getCells = r => [
-      r.run,
-      fmt(r.temperature),
-      fmt(r.chargeLoad),
-      fmt(r.dischargeLoad),
-      fmt(r.dischargeTermValue),
-      fmt(r.chargeTermValue),
+    schema = [
+      { header: 'Temperature (°C)',                  field: 'temperature',        kind: 'number', get: r => fmt(r.temperature) },
+      { header: `Charge Load (${chargeUnit})`,        field: 'chargeLoad',         kind: 'number', get: r => fmt(r.chargeLoad) },
+      { header: `Discharge Load (${dischUnit})`,      field: 'dischargeLoad',      kind: 'number', get: r => fmt(r.dischargeLoad) },
+      { header: `Discharge Term (${dType}, ${dUnit})`, field: 'dischargeTermValue', kind: 'number', get: r => fmt(r.dischargeTermValue) },
+      { header: `Charge Term (${cType}, ${cUnit})`,    field: 'chargeTermValue',    kind: 'number', get: r => fmt(r.chargeTermValue) },
     ];
   } else {
     const chargeUnit = f.chargeLoad.unit;
     const dischUnit  = f.dischargeLoad.unit;
-    headers = [
-      'Run',
-      'Temperature (°C)',
-      `Charge Load (${chargeUnit})`,
-      `Discharge Load (${dischUnit})`,
-      'Disch. Term. Type',
-      'Disch. Term. Value',
-      'Chg. Term. Type',
-      'Chg. Term. Value',
+    schema = [
+      { header: 'Temperature (°C)',              field: 'temperature',    kind: 'number', get: r => fmt(r.temperature) },
+      { header: `Charge Load (${chargeUnit})`,    field: 'chargeLoad',     kind: 'number', get: r => fmt(r.chargeLoad) },
+      { header: `Discharge Load (${dischUnit})`,  field: 'dischargeLoad',  kind: 'number', get: r => fmt(r.dischargeLoad) },
+      // For manual rows this cell holds the combo dropdown — picking a combo
+      // auto-fills the next three (read-only) cells. For generated rows it
+      // shows the combo's dischargeType, identical to before.
+      { header: 'Disch. Term. Type',             field: 'termComboIndex', kind: 'comboSelect',
+        get: r => r.termCombo ? r.termCombo.dischargeType : '—' },
+      { header: 'Disch. Term. Value',            kind: 'static',
+        get: r => {
+          if (!r.termCombo) return '—';
+          const du = TERMINATION_UNITS[r.termCombo.dischargeType] || '';
+          return `${fmt(r.termCombo.dischargeValue)} ${du}`;
+        } },
+      { header: 'Chg. Term. Type',               kind: 'static',
+        get: r => r.termCombo ? r.termCombo.chargeType : '—' },
+      { header: 'Chg. Term. Value',              kind: 'static',
+        get: r => {
+          if (!r.termCombo) return '—';
+          const cu = TERMINATION_UNITS[r.termCombo.chargeType] || '';
+          return `${fmt(r.termCombo.chargeValue)} ${cu}`;
+        } },
     ];
-    getCells = r => {
-      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
-      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
-      return [
-        r.run,
-        fmt(r.temperature),
-        fmt(r.chargeLoad),
-        fmt(r.dischargeLoad),
-        r.termCombo.dischargeType,
-        `${fmt(r.termCombo.dischargeValue)} ${du}`,
-        r.termCombo.chargeType,
-        `${fmt(r.termCombo.chargeValue)} ${cu}`,
-      ];
-    };
   }
 
   const thead = document.getElementById('doe-thead');
@@ -1533,23 +1650,92 @@ function renderTable(runs) {
   thead.innerHTML = '';
   tbody.innerHTML = '';
 
-  const tr = document.createElement('tr');
-  headers.forEach(h => {
+  // Header row
+  const headerTr = document.createElement('tr');
+  ['Run', ...schema.map(c => c.header), ''].forEach(h => {
     const th = document.createElement('th');
     th.textContent = h;
-    tr.appendChild(th);
+    headerTr.appendChild(th);
   });
-  thead.appendChild(tr);
+  thead.appendChild(headerTr);
+
+  const combos = f.termination.combinations;
 
   runs.forEach(r => {
-    const row = document.createElement('tr');
-    getCells(r).forEach((v, i) => {
+    const isManual = r.source === 'manual';
+    const tr = document.createElement('tr');
+    if (isManual) tr.classList.add('manual-row');
+
+    // Run number cell (with optional M badge)
+    const runTd = document.createElement('td');
+    runTd.style.textAlign = 'center';
+    runTd.textContent = r.run;
+    if (isManual) {
+      const badge = document.createElement('span');
+      badge.className = 'manual-badge';
+      badge.textContent = 'M';
+      badge.title = 'Manually added';
+      runTd.appendChild(document.createTextNode(' '));
+      runTd.appendChild(badge);
+    }
+    tr.appendChild(runTd);
+
+    // Data cells
+    schema.forEach(col => {
       const td = document.createElement('td');
-      td.textContent = v;
-      if (i === 0) td.style.textAlign = 'center';
-      row.appendChild(td);
+      if (!isManual || col.kind === 'static') {
+        td.textContent = col.get(r);
+      } else if (col.kind === 'number') {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = r[col.field];
+        input.className = 'manual-cell-input';
+        input.step = 'any';
+        input.addEventListener('change', e => {
+          updateManualRowField(r.manualId, col.field, e.target.value);
+        });
+        td.appendChild(input);
+      } else if (col.kind === 'comboSelect') {
+        const select = document.createElement('select');
+        select.className = 'manual-cell-input';
+        if (combos.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '1';
+          opt.textContent = '(no combinations defined)';
+          select.appendChild(opt);
+          select.disabled = true;
+        } else {
+          combos.forEach((c, i) => {
+            const opt = document.createElement('option');
+            opt.value = String(i + 1);
+            opt.textContent = isCounts ? `Level ${i + 1}` : comboLabel(c);
+            select.appendChild(opt);
+          });
+        }
+        select.value = String(r.termComboIndex);
+        select.addEventListener('change', e => {
+          updateManualRowField(r.manualId, 'termComboIndex', e.target.value);
+        });
+        td.appendChild(select);
+      }
+      tr.appendChild(td);
     });
-    tbody.appendChild(row);
+
+    // Action cell
+    const actionTd = document.createElement('td');
+    actionTd.style.textAlign = 'center';
+    if (isManual) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'manual-row-delete';
+      btn.title = 'Delete this manual row';
+      btn.textContent = '×';
+      btn.addEventListener('click', () => deleteManualRow(r.manualId));
+      actionTd.appendChild(btn);
+    }
+    tr.appendChild(actionTd);
+
+    tbody.appendChild(tr);
   });
 }
 
@@ -1656,28 +1842,37 @@ function render3DPlot(runs) {
   const y = computePlotAxis(runs, yKey);
   const z = computePlotAxis(runs, zKey);
 
-  const hoverTexts = runs.map((r, i) =>
+  const hoverFor = i =>
     `${x.label}: <b>${x.displayValues[i]}</b><br>` +
     `${y.label}: <b>${y.displayValues[i]}</b><br>` +
     `${z.label}: <b>${z.displayValues[i]}</b><br>` +
-    `<i>Run ${r.run}</i>`
-  );
+    `<i>Run ${runs[i].run}${runs[i].source === 'manual' ? ' (manual)' : ''}</i>`;
 
-  const trace = {
+  const buildTrace = (indices, name, markerOverride) => ({
     type:          'scatter3d',
     mode:          'markers',
-    x:             x.values,
-    y:             y.values,
-    z:             z.values,
-    text:          hoverTexts,
+    name,
+    x:             indices.map(i => x.values[i]),
+    y:             indices.map(i => y.values[i]),
+    z:             indices.map(i => z.values[i]),
+    text:          indices.map(hoverFor),
     hovertemplate: '%{text}<extra></extra>',
+    showlegend:    indices.length > 0,
     marker: {
       size:    5,
       color:   '#33b257',
       opacity: 0.85,
       line:    { width: 0.5, color: '#1e6632' },
+      ...markerOverride,
     },
-  };
+  });
+
+  const genIdx = runs.map((r, i) => r.source === 'manual' ? -1 : i).filter(i => i >= 0);
+  const manIdx = runs.map((r, i) => r.source === 'manual' ?  i : -1).filter(i => i >= 0);
+  const traces = [buildTrace(genIdx, 'Generated', {})];
+  if (manIdx.length > 0) {
+    traces.push(buildTrace(manIdx, 'Manual', { symbol: 'diamond', color: '#d97706', line: { width: 0.8, color: '#7c3a00' } }));
+  }
 
   const layout = {
     scene: {
@@ -1688,11 +1883,12 @@ function render3DPlot(runs) {
     },
     margin:        { t: 10, r: 10, b: 10, l: 10 },
     autosize:      true,
+    showlegend:    manIdx.length > 0,
     paper_bgcolor: '#ffffff',
     font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
   };
 
-  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
+  Plotly.react(plotId, traces, layout, { responsive: true, displayModeBar: true, displaylogo: false });
 }
 
 function render2DPlot(runs) {
@@ -1703,38 +1899,48 @@ function render2DPlot(runs) {
   const x = computePlotAxis(runs, xKey);
   const y = computePlotAxis(runs, yKey);
 
-  const hoverTexts = runs.map((r, i) =>
+  const hoverFor = i =>
     `${x.label}: <b>${x.displayValues[i]}</b><br>` +
     `${y.label}: <b>${y.displayValues[i]}</b><br>` +
-    `<i>Run ${r.run}</i>`
-  );
+    `<i>Run ${runs[i].run}${runs[i].source === 'manual' ? ' (manual)' : ''}</i>`;
 
-  const trace = {
+  const buildTrace = (indices, name, markerOverride) => ({
     type:          'scatter',
     mode:          'markers',
-    x:             x.values,
-    y:             y.values,
-    text:          hoverTexts,
+    name,
+    x:             indices.map(i => x.values[i]),
+    y:             indices.map(i => y.values[i]),
+    text:          indices.map(hoverFor),
     hovertemplate: '%{text}<extra></extra>',
+    showlegend:    indices.length > 0,
     marker: {
       size:    10,
       color:   '#33b257',
       opacity: 0.8,
       line:    { width: 1, color: '#1e6632' },
+      ...markerOverride,
     },
-  };
+  });
+
+  const genIdx = runs.map((r, i) => r.source === 'manual' ? -1 : i).filter(i => i >= 0);
+  const manIdx = runs.map((r, i) => r.source === 'manual' ?  i : -1).filter(i => i >= 0);
+  const traces = [buildTrace(genIdx, 'Generated', {})];
+  if (manIdx.length > 0) {
+    traces.push(buildTrace(manIdx, 'Manual', { symbol: 'diamond', color: '#d97706', line: { width: 1.2, color: '#7c3a00' } }));
+  }
 
   const layout = {
     xaxis:         x.buildLayout({ automargin: true }),
     yaxis:         y.buildLayout({ automargin: true }),
     margin:        { t: 20, r: 20, b: 50, l: 60 },
     autosize:      true,
+    showlegend:    manIdx.length > 0,
     paper_bgcolor: '#ffffff',
     plot_bgcolor:  '#fafafa',
     font:          { family: "'Montserrat', sans-serif", size: 11, color: '#323232' },
   };
 
-  Plotly.react(plotId, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false });
+  Plotly.react(plotId, traces, layout, { responsive: true, displayModeBar: true, displaylogo: false });
 }
 
 /** Render whichever scatter plot is currently active (2D or 3D). */
@@ -1961,7 +2167,7 @@ function setupParcoordsInteraction() {
   container.addEventListener('mouseup', e => {
     const down = mouseDown;
     mouseDown = null;
-    if (!down || !state.results) return;
+    if (!down || !hasAnyRuns()) return;
 
     // Discard drags (axis brush / axis reorder)
     if (Math.abs(e.clientX - down.x) > 4 || Math.abs(e.clientY - down.y) > 4) return;
@@ -1970,25 +2176,26 @@ function setupParcoordsInteraction() {
     const cx   = e.clientX - rect.left;
     const cy   = e.clientY - rect.top;
 
-    const hitIdx = findNearestParcoordsLine(cx, cy, container, state.results);
+    const combined = getCombinedRuns();
+    const hitIdx = findNearestParcoordsLine(cx, cy, container, combined);
     if (hitIdx === -1) {
       if (state.highlightedRun !== null) {
         state.highlightedRun = null;
-        renderParCoords(state.results);
+        renderParCoords(combined);
       }
       return;
     }
 
-    const runNum = state.results[hitIdx].run;
+    const runNum = combined[hitIdx].run;
     state.highlightedRun = state.highlightedRun === runNum ? null : runNum;
-    renderParCoords(state.results);
+    renderParCoords(combined);
   });
 }
 
 // ── CSV download ───────────────────────────────────────────────────────────
 
 function downloadCSV() {
-  if (!state.results) return;
+  if (!hasAnyRuns()) return;
   const f        = state.factors;
   const isCounts = state.inputMode === 'counts';
   const isRange  = state.inputMode === 'range';
@@ -1996,8 +2203,8 @@ function downloadCSV() {
   let header, makeRow;
 
   if (isCounts) {
-    header  = ['Run', 'TemperatureLevel', 'ChargeLoadLevel', 'DischargeLoadLevel', 'TerminationLevel'].join(',');
-    makeRow = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex].join(',');
+    header  = ['Run', 'TemperatureLevel', 'ChargeLoadLevel', 'DischargeLoadLevel', 'TerminationLevel', 'Source'].join(',');
+    makeRow = r => [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, r.termComboIndex, r.source].join(',');
   } else if (isRange) {
     const chargeUnit = f.chargeLoad.unit;
     const dischUnit  = f.dischargeLoad.unit;
@@ -2014,6 +2221,7 @@ function downloadCSV() {
       `DischargeTermValue_${dUnit}`,
       'ChargeTermType',
       `ChargeTermValue_${cUnit}`,
+      'Source',
     ].join(',');
     makeRow = r => [
       r.run,
@@ -2024,6 +2232,7 @@ function downloadCSV() {
       r.dischargeTermValue,
       r.chargeTermType,
       r.chargeTermValue,
+      r.source,
     ].join(',');
   } else {
     const chargeUnit = f.chargeLoad.unit;
@@ -2037,24 +2246,29 @@ function downloadCSV() {
       'DischargeTermValue',
       'ChargeTermType',
       'ChargeTermValue',
+      'Source',
     ].join(',');
     makeRow = r => {
-      const du = TERMINATION_UNITS[r.termCombo.dischargeType];
-      const cu = TERMINATION_UNITS[r.termCombo.chargeType];
+      if (!r.termCombo) {
+        return [r.run, r.temperature, r.chargeLoad, r.dischargeLoad, '', '', '', '', r.source].join(',');
+      }
+      const du = TERMINATION_UNITS[r.termCombo.dischargeType] || '';
+      const cu = TERMINATION_UNITS[r.termCombo.chargeType] || '';
       return [
         r.run,
         r.temperature,
         r.chargeLoad,
         r.dischargeLoad,
         r.termCombo.dischargeType,
-        `${r.termCombo.dischargeValue} ${du}`,
+        `${r.termCombo.dischargeValue} ${du}`.trim(),
         r.termCombo.chargeType,
-        `${r.termCombo.chargeValue} ${cu}`,
+        `${r.termCombo.chargeValue} ${cu}`.trim(),
+        r.source,
       ].join(',');
     };
   }
 
-  const rows = state.results.map(makeRow);
+  const rows = getCombinedRuns().map(makeRow);
   const csv  = [header, ...rows].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
@@ -2358,6 +2572,11 @@ function applyMethodAvailability() {
  * the init wiring and any future programmatic mode changes.
  */
 function setInputMode(mode) {
+  let clearedManual = false;
+  if (state.inputMode !== mode && state.manualRuns && state.manualRuns.length > 0) {
+    state.manualRuns = [];
+    clearedManual = true;
+  }
   state.inputMode = mode;
   document.querySelectorAll('.mode-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === mode)
@@ -2370,6 +2589,7 @@ function setInputMode(mode) {
   if (countsPanel) countsPanel.classList.toggle('hidden', mode !== 'counts');
   applyMethodAvailability();
   updateOrthogonalBadge();
+  if (clearedManual) refreshAllResults();
 }
 
 /**
@@ -2530,6 +2750,12 @@ function init() {
   // Download CSV button
   document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
 
+  // Add manual row buttons (one in the table toolbar, one in the empty state)
+  const btnAddManual = document.getElementById('btn-add-manual');
+  if (btnAddManual) btnAddManual.addEventListener('click', addManualRow);
+  const btnAddManualEmpty = document.getElementById('btn-add-manual-empty');
+  if (btnAddManualEmpty) btnAddManualEmpty.addEventListener('click', addManualRow);
+
   // Live invalid-highlight on blur for numeric factor inputs
   ['input-temperature', 'input-charge', 'input-discharge'].forEach(id => {
     document.getElementById(id).addEventListener('blur', () => {
@@ -2567,7 +2793,7 @@ function init() {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
-      if (state.results) render3DPlot(state.results);
+      if (hasAnyRuns()) render3DPlot(getCombinedRuns());
     });
   });
 
@@ -2576,7 +2802,7 @@ function init() {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
-      if (state.results) render2DPlot(state.results);
+      if (hasAnyRuns()) render2DPlot(getCombinedRuns());
     });
   });
 
@@ -2593,7 +2819,7 @@ function init() {
       const cell2d = document.querySelector('.plot-cell-2d');
       if (cell3d) cell3d.classList.toggle('hidden', tab !== '3d');
       if (cell2d) cell2d.classList.toggle('hidden', tab !== '2d');
-      if (state.results) renderActivePlot(state.results);
+      if (hasAnyRuns()) renderActivePlot(getCombinedRuns());
     });
   });
 
@@ -3237,6 +3463,74 @@ code {
 }
 .plot-section-title:not(:first-child) { margin-top: 16px; }
 
+.table-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.btn-add-manual {
+  background: #ffffff;
+  border: 1px solid var(--gray-border);
+  color: #323232;
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+}
+.btn-add-manual:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+.manual-row {
+  background: #fff8ec;
+}
+.manual-row:hover {
+  background: #fff1d8;
+}
+.manual-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #d97706;
+  color: #ffffff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.manual-cell-input {
+  width: 100%;
+  min-width: 60px;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  padding: 3px 5px;
+  border: 1px solid var(--gray-border);
+  border-radius: 4px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+.manual-cell-input:focus {
+  outline: none;
+  border-color: #d97706;
+}
+.manual-row-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #b00020;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+.manual-row-delete:hover {
+  background: #fee2e2;
+  border-color: #b00020;
+}
+
 .plot-hint {
   font-size: 0.7rem;
   font-weight: 500;
@@ -3868,7 +4162,7 @@ code {
   ═══════════════════════════════════════════════════════ -->
   <div class="plot-area">
 
-    <!-- Empty state (shown until first generate) -->
+    <!-- Empty state (shown until first generate or first manual row) -->
     <div class="empty-state" id="emptyState">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="12" cy="12" r="10" />
@@ -3876,6 +4170,9 @@ code {
       </svg>
       <div>Define factors and generate a design</div>
       <div class="hint">Fill in the parameters on the left, choose a DoE method, then press <strong>Generate DoE</strong>.</div>
+      <div class="hint" style="margin-top:12px;">
+        Or <button type="button" id="btn-add-manual-empty" class="btn-add-manual" style="display:inline-block;">+ Add manual row</button> to start with custom conditions.
+      </div>
     </div>
 
     <!-- Results: plots + table -->
@@ -3939,6 +4236,9 @@ code {
         </div>
 
         <div class="plot-section-title">DoE Conditions</div>
+        <div class="table-toolbar">
+          <button type="button" id="btn-add-manual" class="btn-add-manual">+ Add manual row</button>
+        </div>
         <div class="table-cell">
           <table id="doe-table">
             <thead id="doe-thead"></thead>

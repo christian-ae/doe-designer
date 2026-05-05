@@ -45,8 +45,9 @@ const state = {
   methodParams: {
     samples:                20,
     orthogonalSubdivisions: 2,
-    iOptimalModel:          'main2fi',  // 'main' | 'main2fi'
+    iOptimalModel:          'main2fi',  // 'main' | 'main2fi' | 'custom'
     iOptimalRuns:           17,         // user-editable; default = ceil(1.5 * paramCount)
+    iOptimalCustomFormula:  '',         // raw user-typed formula when iOptimalModel === 'custom'
   },
   repeats:        1,
   inputMode:      'range', // 'values' | 'counts' | 'range'
@@ -611,7 +612,7 @@ function buildCandidateSet(factors) {
  * row vector. The function captures the per-factor min/max so it doesn't
  * recompute them per candidate.
  */
-function makeRowEncoder(factors, modelForm, activeIdxs) {
+function makeRowEncoder(factors, modelForm, activeIdxs, customTerms = null, quadIdxs = null) {
   const lists = [
     factors.temperature.values,
     factors.chargeLoad.values,
@@ -636,13 +637,40 @@ function makeRowEncoder(factors, modelForm, activeIdxs) {
   };
 
   return function encodeRow(candidate) {
+    if (modelForm === 'custom') {
+      const coded = [
+        code(rawAccessors[0](candidate), 0),
+        code(rawAccessors[1](candidate), 1),
+        code(rawAccessors[2](candidate), 2),
+        code(rawAccessors[3](candidate), 3),
+      ];
+      const row = [1];  // intercept
+      for (const term of (customTerms || [])) {
+        let v = 1;
+        for (let k = 0; k < 4; k++) {
+          if (term.powers[k] === 0) continue;
+          v *= Math.pow(coded[k], term.powers[k]);
+        }
+        row.push(v);
+      }
+      return row;
+    }
     const codedActive = activeIdxs.map(idx => code(rawAccessors[idx](candidate), idx));
     const row = [1];  // intercept
     for (const v of codedActive) row.push(v);
-    if (modelForm === 'main2fi') {
+    if (modelForm === 'main2fi' || modelForm === 'main2fiQuad') {
       for (let i = 0; i < codedActive.length; i++) {
         for (let j = i + 1; j < codedActive.length; j++) {
           row.push(codedActive[i] * codedActive[j]);
+        }
+      }
+    }
+    if (modelForm === 'main2fiQuad' && quadIdxs) {
+      for (const fi of quadIdxs) {
+        const pos = activeIdxs.indexOf(fi);
+        if (pos >= 0) {
+          const v = codedActive[pos];
+          row.push(v * v);
         }
       }
     }
@@ -655,16 +683,144 @@ function makeRowEncoder(factors, modelForm, activeIdxs) {
  * arrays, sized |C| × p. p = 1 + activeCount  for 'main',
  *                       1 + activeCount + C(activeCount, 2)  for 'main2fi'.
  */
-function encodeAsModelMatrix(candidates, factors, modelForm, activeIdxs) {
-  const encodeRow = makeRowEncoder(factors, modelForm, activeIdxs);
+function encodeAsModelMatrix(candidates, factors, modelForm, activeIdxs, customTerms = null, quadIdxs = null) {
+  const encodeRow = makeRowEncoder(factors, modelForm, activeIdxs, customTerms, quadIdxs);
   return candidates.map(encodeRow);
 }
 
+/**
+ * Indices (into the canonical 4-factor list) of factors that have ≥3 distinct
+ * levels — i.e. the factors that can support a quadratic (x²) column without
+ * collapsing to the constant 1 (which would be collinear with the intercept).
+ */
+function getQuadFactorIndices(factors) {
+  const lengths = [
+    factors.temperature.values.length,
+    factors.chargeLoad.values.length,
+    factors.dischargeLoad.values.length,
+    factors.termination.combinations.length,
+  ];
+  const out = [];
+  for (let i = 0; i < 4; i++) if (lengths[i] >= 3) out.push(i);
+  return out;
+}
+
 /** Number of model parameters for the given config. */
-function iOptimalParamCount(modelForm, activeCount) {
+function iOptimalParamCount(modelForm, activeCount, customTerms = null, quadCount = 0) {
+  if (modelForm === 'custom') {
+    return 1 + (customTerms ? customTerms.length : 0);
+  }
   const base = 1 + activeCount;
-  if (modelForm !== 'main2fi') return base;
-  return base + (activeCount * (activeCount - 1)) / 2;
+  if (modelForm === 'main') return base;
+  const twofi = base + (activeCount * (activeCount - 1)) / 2;
+  if (modelForm === 'main2fi') return twofi;
+  if (modelForm === 'main2fiQuad') return twofi + quadCount;
+  return base;
+}
+
+/**
+ * Parse a user-typed I-Optimal model formula into a list of terms.
+ *
+ * Grammar (case-insensitive on names):
+ *   formula  := term ((',' | '+') term)*
+ *   term     := factorPow ('*' factorPow)*
+ *   factorPow:= name ('^' integer)?
+ *   name     := 'Temp' | 'CL' | 'DL' | 'Term'
+ *
+ * The intercept is implicit and never written. Whitespace is ignored.
+ * Each term becomes a coded model column whose value is the product of the
+ * coded factor values raised to the specified powers. Returns
+ * { terms } on success or { error } on the first parse / validation failure.
+ *
+ * Validation rules:
+ *  - all referenced factor names must be one of {Temp, CL, DL, Term}
+ *  - referenced factors must be active (more than one level)
+ *  - no powers ≥ 2 on factors with fewer than 3 distinct levels
+ *    (with only 2 levels coded ±1, x² is constant and collinear with intercept)
+ *  - no duplicate terms (same powers vector)
+ */
+function parseCustomModel(input, factors) {
+  const NAMES = ['Temp', 'CL', 'DL', 'Term'];
+  const NAMES_LC = NAMES.map(n => n.toLowerCase());
+  const lengths = [
+    factors.temperature.values.length,
+    factors.chargeLoad.values.length,
+    factors.dischargeLoad.values.length,
+    factors.termination.combinations.length,
+  ];
+
+  const raw = (input || '').trim();
+  if (raw === '') {
+    return { error: 'Custom model: enter at least one term (e.g. "Temp, CL, DL, CL*DL").' };
+  }
+
+  const pieces = raw.split(/[,+]/).map(s => s.trim()).filter(s => s.length > 0);
+  if (pieces.length === 0) {
+    return { error: 'Custom model: no terms found.' };
+  }
+
+  const terms = [];
+  const seen = new Map();  // powers-key -> canonical label of the prior occurrence
+
+  for (const piece of pieces) {
+    const factorTokens = piece.split('*').map(s => s.trim());
+    if (factorTokens.some(t => t === '')) {
+      return { error: `Custom model: malformed term "${piece}" (check for stray "*").` };
+    }
+    const powers = [0, 0, 0, 0];
+    for (const tok of factorTokens) {
+      let name, kStr;
+      const caretIdx = tok.indexOf('^');
+      if (caretIdx >= 0) {
+        name = tok.slice(0, caretIdx).trim();
+        kStr = tok.slice(caretIdx + 1).trim();
+      } else {
+        name = tok;
+        kStr = '1';
+      }
+      const idx = NAMES_LC.indexOf(name.toLowerCase());
+      if (idx < 0) {
+        return { error: `Custom model: unknown factor "${name}" in term "${piece}". Use Temp, CL, DL, or Term.` };
+      }
+      if (!/^\d+$/.test(kStr)) {
+        return { error: `Custom model: invalid power "${kStr}" in term "${piece}". Powers must be positive integers.` };
+      }
+      const k = parseInt(kStr, 10);
+      if (k < 1) {
+        return { error: `Custom model: power must be ≥ 1 in term "${piece}".` };
+      }
+      powers[idx] += k;
+    }
+
+    if (powers.every(p => p === 0)) {
+      return { error: `Custom model: term "${piece}" is empty.` };
+    }
+
+    for (let i = 0; i < 4; i++) {
+      if (powers[i] === 0) continue;
+      if (lengths[i] <= 1) {
+        return { error: `Custom model: term "${piece}" references ${NAMES[i]}, which is held constant (only one level).` };
+      }
+      if (powers[i] >= 2 && lengths[i] < 3) {
+        return { error: `Custom model: term "${piece}" uses ${NAMES[i]}^${powers[i]}, but ${NAMES[i]} has only ${lengths[i]} level(s). Squared (or higher) terms need ≥3 distinct levels.` };
+      }
+    }
+
+    const labelParts = [];
+    for (let i = 0; i < 4; i++) {
+      if (powers[i] === 0) continue;
+      labelParts.push(powers[i] === 1 ? NAMES[i] : `${NAMES[i]}^${powers[i]}`);
+    }
+    const canonical = labelParts.join('*');
+    const key = powers.join(',');
+    if (seen.has(key)) {
+      return { error: `Custom model: duplicate term "${piece}" (already specified as "${seen.get(key)}").` };
+    }
+    seen.set(key, canonical);
+    terms.push({ powers, label: canonical });
+  }
+
+  return { terms };
 }
 
 /**
@@ -879,7 +1035,7 @@ function fedorovExchange(candidatesM, N, criterion = 'D', W = null) {
  * Throws an Error if every restart hits a singular start — caller should
  * surface this as a validation-style error.
  */
-function generateIOptimal(factors, modelForm, N) {
+function generateIOptimal(factors, modelForm, N, customTerms = null) {
   const NUM_RESTARTS = 5;
 
   const activeIdxs = getActiveFactorIndices(factors);
@@ -890,12 +1046,13 @@ function generateIOptimal(factors, modelForm, N) {
   if (N > C.length) {
     throw new Error(`I-Optimal: requested ${N} runs exceeds the ${C.length} candidate points; I-Optimal cannot pick more rows than exist in the Cartesian product of the factor values.`);
   }
-  const p = iOptimalParamCount(modelForm, activeIdxs.length);
+  const activeQuadIdxs = getQuadFactorIndices(factors).filter(i => activeIdxs.includes(i));
+  const p = iOptimalParamCount(modelForm, activeIdxs.length, customTerms, activeQuadIdxs.length);
   if (N < p) {
     throw new Error(`I-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}).`);
   }
 
-  const M = encodeAsModelMatrix(C, factors, modelForm, activeIdxs);
+  const M = encodeAsModelMatrix(C, factors, modelForm, activeIdxs, customTerms, activeQuadIdxs);
   const W = computeMomentsMatrix(M);
 
   let bestDesign = null;
@@ -1093,11 +1250,28 @@ function validateInputs() {
       if (activeIdxs.length === 0) {
         errors.push('I-Optimal: at least one factor must have more than one level.');
       } else {
-        const p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length);
-        if (N < p) {
-          errors.push(
-            `I-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}) — increase runs or switch to a smaller model.`
+        let customTerms = null;
+        if (state.methodParams.iOptimalModel === 'custom') {
+          const parsed = parseCustomModel(state.methodParams.iOptimalCustomFormula, f);
+          if (parsed.error) {
+            errors.push(parsed.error);
+          } else {
+            customTerms = parsed.terms;
+          }
+        }
+        const activeQuadIdxs = getQuadFactorIndices(f).filter(i => activeIdxs.includes(i));
+        if (state.methodParams.iOptimalModel === 'main2fiQuad' && activeQuadIdxs.length === 0) {
+          warnings.push(
+            'I-Optimal: model includes quadratic terms but no active factor has ≥3 distinct levels — quadratic columns will be skipped, so the design is effectively main + 2FI.'
           );
+        }
+        const p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length, customTerms, activeQuadIdxs.length);
+        if (state.methodParams.iOptimalModel !== 'custom' || customTerms !== null) {
+          if (N < p) {
+            errors.push(
+              `I-Optimal: number of runs (N=${N}) must be ≥ N model parameters (p=${p}) — increase runs or switch to a smaller model.`
+            );
+          }
         }
         const candidateCount =
           f.temperature.values.length *
@@ -1193,7 +1367,12 @@ function validateAndGenerate() {
       ? generateOrthogonalContinuous(f, state.methodParams.orthogonalSubdivisions)
       : generateOrthogonal(f, state.methodParams.orthogonalSubdivisions);
   } else if (state.method === 'iOptimal') {
-    const out = generateIOptimal(f, state.methodParams.iOptimalModel, state.methodParams.iOptimalRuns);
+    let customTerms = null;
+    if (state.methodParams.iOptimalModel === 'custom') {
+      const parsed = parseCustomModel(state.methodParams.iOptimalCustomFormula, f);
+      customTerms = parsed.terms || null;
+    }
+    const out = generateIOptimal(f, state.methodParams.iOptimalModel, state.methodParams.iOptimalRuns, customTerms);
     runs = out.runs;
     state.iOptimalTrace = out.trace;
   }
@@ -1239,8 +1418,18 @@ function updateExperimentDisplays() {
   const nRuns  = state.results.length;
   const nCells = nRuns * state.repeats;
 
-  const modelFormShort = mf => mf === 'main2fi' ? 'main+2FI' : 'main';
-  const modelFormLong  = mf => mf === 'main2fi' ? 'main effects + 2-factor interactions' : 'main effects only';
+  const modelFormShort = mf => {
+    if (mf === 'main2fi')      return 'main+2FI';
+    if (mf === 'main2fiQuad')  return 'main+2FI+quad';
+    if (mf === 'custom')       return 'custom';
+    return 'main';
+  };
+  const modelFormLong = mf => {
+    if (mf === 'main2fi')      return 'main effects + 2-factor interactions';
+    if (mf === 'main2fiQuad')  return 'main effects + 2-factor interactions + quadratic terms';
+    if (mf === 'custom')       return 'custom formula';
+    return 'main effects only';
+  };
   const iM = state.methodParams.iOptimalModel;
   const iN = state.methodParams.iOptimalRuns;
   const methodShort = {
@@ -2089,11 +2278,38 @@ function updateIOptimalBadge() {
     Math.max(f.dischargeLoad.values.length, 1) *
     Math.max(f.termination.combinations.length, 1);
   const activeIdxs = getActiveFactorIndices(f);
-  const p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length);
+  let p;
+  let feedbackText = null;
+  let feedbackIsError = false;
+  if (state.methodParams.iOptimalModel === 'custom') {
+    const parsed = parseCustomModel(state.methodParams.iOptimalCustomFormula, f);
+    if (parsed.error) {
+      p = null;
+      feedbackText = parsed.error;
+      feedbackIsError = true;
+    } else {
+      p = iOptimalParamCount('custom', activeIdxs.length, parsed.terms);
+      feedbackText = `Parsed ${parsed.terms.length} term${parsed.terms.length !== 1 ? 's' : ''} (p = ${p} incl. intercept): ${parsed.terms.map(t => t.label).join(', ')}`;
+    }
+  } else {
+    const activeQuadIdxs = getQuadFactorIndices(f).filter(i => activeIdxs.includes(i));
+    p = iOptimalParamCount(state.methodParams.iOptimalModel, activeIdxs.length, null, activeQuadIdxs.length);
+  }
+
+  const fb = document.getElementById('ioptimal-custom-feedback');
+  if (fb) {
+    if (state.methodParams.iOptimalModel === 'custom' && feedbackText !== null) {
+      fb.textContent = feedbackText;
+      fb.style.color = feedbackIsError ? 'var(--danger, #b00020)' : '';
+    } else {
+      fb.innerHTML = 'Names: <strong>Temp</strong>, <strong>CL</strong>, <strong>DL</strong>, <strong>Term</strong>. Separate terms with commas; use <code>*</code> for products and <code>^</code> for powers. Intercept is always included.';
+      fb.style.color = '';
+    }
+  }
 
   cEl.textContent   = candidateCount.toLocaleString();
-  pEl.textContent   = p.toString();
-  minEl.textContent = p.toString();
+  pEl.textContent   = p === null ? '—' : p.toString();
+  minEl.textContent = p === null ? '—' : p.toString();
 }
 
 // ── Mode switching ─────────────────────────────────────────────────────────
@@ -2211,15 +2427,44 @@ function init() {
     });
   }
 
+  // I-Optimal custom-formula input
+  const iOptimalCustomEl = document.getElementById('input-ioptimal-custom');
+  if (iOptimalCustomEl) {
+    iOptimalCustomEl.addEventListener('input', e => {
+      state.methodParams.iOptimalCustomFormula = e.target.value;
+      updateIOptimalBadge();
+      if (!userEditedIOptimalRuns && iOptimalRunsEl && state.methodParams.iOptimalModel === 'custom') {
+        const activeIdxs = getActiveFactorIndices(state.factors);
+        const parsed = parseCustomModel(e.target.value, state.factors);
+        if (!parsed.error) {
+          const p = iOptimalParamCount('custom', activeIdxs.length, parsed.terms);
+          const newDefault = Math.ceil(1.5 * p);
+          state.methodParams.iOptimalRuns = newDefault;
+          iOptimalRunsEl.value = newDefault;
+        }
+      }
+    });
+  }
+
   // I-Optimal model-form radios
   document.querySelectorAll('input[name="ioptimal-model"]').forEach(radio => {
     radio.addEventListener('change', () => {
       state.methodParams.iOptimalModel = radio.value;
+      const customRow = document.getElementById('ioptimal-custom-row');
+      if (customRow) customRow.classList.toggle('hidden', radio.value !== 'custom');
       updateIOptimalBadge();
       // Auto-recompute the run-count default if user hasn't manually edited
       if (!userEditedIOptimalRuns && iOptimalRunsEl) {
         const activeIdxs = getActiveFactorIndices(state.factors);
-        const p = iOptimalParamCount(radio.value, activeIdxs.length);
+        let p;
+        if (radio.value === 'custom') {
+          const parsed = parseCustomModel(state.methodParams.iOptimalCustomFormula, state.factors);
+          if (parsed.error) return;
+          p = iOptimalParamCount('custom', activeIdxs.length, parsed.terms);
+        } else {
+          const activeQuadIdxs = getQuadFactorIndices(state.factors).filter(i => activeIdxs.includes(i));
+          p = iOptimalParamCount(radio.value, activeIdxs.length, null, activeQuadIdxs.length);
+        }
         const newDefault = Math.ceil(1.5 * p);
         state.methodParams.iOptimalRuns = newDefault;
         iOptimalRunsEl.value = newDefault;
@@ -3549,6 +3794,23 @@ code {
             <div class="model-form-group">
               <label><input type="radio" name="ioptimal-model" value="main" /> Main effects only</label>
               <label><input type="radio" name="ioptimal-model" value="main2fi" checked /> Main effects + 2-factor interactions</label>
+              <label><input type="radio" name="ioptimal-model" value="main2fiQuad" /> Main effects + 2-factor interactions + quadratic terms</label>
+              <label><input type="radio" name="ioptimal-model" value="custom" /> Custom formula</label>
+            </div>
+          </div>
+          <div class="method-param-row hidden" id="ioptimal-custom-row">
+            <label for="input-ioptimal-custom">Custom formula</label>
+            <div style="flex:1; display:flex; flex-direction:column; gap:4px;">
+              <input
+                type="text"
+                id="input-ioptimal-custom"
+                class="param-input"
+                style="width:100%; font-family: var(--mono, monospace);"
+                placeholder="e.g. Temp, CL, DL, CL*DL, CL^2, DL^2"
+              />
+              <p id="ioptimal-custom-feedback" class="field-hint" style="margin:0;">
+                Names: <strong>Temp</strong>, <strong>CL</strong>, <strong>DL</strong>, <strong>Term</strong>. Separate terms with commas; use <code>*</code> for products and <code>^</code> for powers. Intercept is always included.
+              </p>
             </div>
           </div>
           <div class="method-param-row">
